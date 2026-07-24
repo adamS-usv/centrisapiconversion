@@ -1,0 +1,13 @@
+inventtrans|datephysical|1900-01-01|2026-06-04|0|499619
+inventtrans|datefinancial|1900-01-01|2026-06-04|0|500644
+salestable|deliverydate|2019-02-02|2026-06-08|0|500865
+salesline|receiptdaterequested|1900-01-01|2026-06-22|0|500974
+salesline|shippingdaterequested|2019-02-02|2026-10-05|0|500043
+purchline|deliverydate|1900-01-01|2029-10-23|0|500847
+purchlinehistory|deliverydate|1900-01-01|2029-12-15|0|499996
+inventtrans|_fivetran_synced|2026-04-21|2026-06-04|0|497149
+inventtransorigin|_fivetran_synced|2026-04-21|2026-06-04|0|502468
+ledgerentryjournal|_fivetran_synced|2026-04-21|2026-06-04|0|500849
+reqitemtable|_fivetran_synced|2026-04-21|2026-06-04|0|499679
+vendinvoiceinfoline|_fivetran_synced|2026-04-20|2026-06-04|0|500041
+inventtransorigin|sink_created_on|2026-04-14|2026-06-04|0|500397

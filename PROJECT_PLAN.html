@@ -1,0 +1,1744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Atlas Phase 2 — Implementation Project Plan</title>
+<style>
+  :root {
+    --bg: #f5f7fb;
+    --surface: #ffffff;
+    --surface-2: #fafbfd;
+    --ink: #0f172a;
+    --ink-2: #334155;
+    --ink-3: #64748b;
+    --line: #e2e8f0;
+    --line-2: #cbd5e1;
+    --primary: #4f46e5;
+    --primary-dark: #4338ca;
+    --primary-soft: #eef2ff;
+    --accent: #0891b2;
+    --warn: #c2410c;
+    --warn-soft: #fff7ed;
+    --good: #047857;
+    --good-soft: #ecfdf5;
+    --danger: #b91c1c;
+    --shadow: 0 1px 2px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.04);
+    --shadow-2: 0 2px 4px rgba(15,23,42,0.06), 0 8px 24px rgba(15,23,42,0.06);
+    --radius: 10px;
+    --radius-sm: 6px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--ink);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ========== HEADER ========== */
+  .hero {
+    background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 60%, #6366f1 100%);
+    color: #fff;
+    padding: 56px 40px 64px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 12% 18%, rgba(255,255,255,0.08) 0, transparent 35%),
+      radial-gradient(circle at 88% 70%, rgba(99,102,241,0.25) 0, transparent 40%);
+    pointer-events: none;
+  }
+  .hero-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    position: relative;
+  }
+  .hero .eyebrow {
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    color: rgba(255,255,255,0.7);
+    margin: 0 0 8px;
+  }
+  .hero h1 {
+    font-size: 42px;
+    font-weight: 700;
+    margin: 0 0 8px;
+    letter-spacing: -0.02em;
+  }
+  .hero .subtitle {
+    font-size: 18px;
+    color: rgba(255,255,255,0.85);
+    margin: 0 0 28px;
+    font-weight: 400;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .meta-pill {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 13px;
+    backdrop-filter: blur(6px);
+  }
+  .meta-pill strong { color: #fff; font-weight: 600; }
+  .meta-pill span { color: rgba(255,255,255,0.7); margin-left: 4px; }
+
+  /* ========== LAYOUT ========== */
+  .layout {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px 40px 80px;
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 40px;
+  }
+
+  /* ========== TOC ========== */
+  .toc {
+    position: sticky;
+    top: 24px;
+    align-self: start;
+    font-size: 13px;
+  }
+  .toc h4 {
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 11px;
+    color: var(--ink-3);
+    margin: 0 0 12px;
+    font-weight: 600;
+  }
+  .toc ol {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    border-left: 2px solid var(--line);
+  }
+  .toc ol li { margin: 0; }
+  .toc ol li a {
+    display: block;
+    padding: 6px 12px;
+    color: var(--ink-2);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    margin-left: -2px;
+    transition: all 0.15s;
+  }
+  .toc ol li a:hover {
+    color: var(--primary);
+    background: var(--primary-soft);
+    border-left-color: var(--primary);
+  }
+
+  /* ========== MAIN CONTENT ========== */
+  main { min-width: 0; }
+  section { margin-bottom: 56px; }
+  section:last-child { margin-bottom: 0; }
+
+  h2 {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: -0.015em;
+    margin: 0 0 8px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  h2 .h2-num {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--primary);
+    font-weight: 600;
+    background: var(--primary-soft);
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+  }
+  .section-lead {
+    color: var(--ink-3);
+    font-size: 15px;
+    margin: 0 0 24px;
+  }
+
+  h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--ink);
+    margin: 28px 0 12px;
+    letter-spacing: -0.01em;
+  }
+  h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-2);
+    margin: 20px 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  p { margin: 0 0 12px; }
+  a { color: var(--primary); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--primary-soft);
+    color: var(--primary-dark);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  /* ========== CARDS ========== */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    box-shadow: var(--shadow);
+  }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px 18px 16px;
+    box-shadow: var(--shadow);
+  }
+  .stat .num {
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+  .stat .label {
+    font-size: 12px;
+    color: var(--ink-3);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 6px;
+  }
+  .stat .sub {
+    font-size: 12px;
+    color: var(--ink-3);
+    margin-top: 2px;
+  }
+
+  /* ========== TEAM GRID ========== */
+  .team-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+  .team-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: var(--shadow);
+    position: relative;
+    overflow: hidden;
+  }
+  .team-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: var(--team-color, var(--primary));
+  }
+  .team-card-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    gap: 12px;
+  }
+  .team-card h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .team-card .size {
+    font-size: 12px;
+    color: var(--ink-3);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .team-card .role {
+    font-size: 13px;
+    color: var(--ink-3);
+    margin: 0 0 12px;
+    font-style: italic;
+  }
+  .team-card .scope {
+    font-size: 13px;
+    color: var(--ink-2);
+    margin: 8px 0;
+    line-height: 1.5;
+  }
+  .team-card .scope-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-3);
+    font-weight: 600;
+    margin-right: 6px;
+  }
+
+  /* ========== TIMELINE ========== */
+  .timeline {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 28px 24px;
+    margin-bottom: 32px;
+    box-shadow: var(--shadow);
+    overflow-x: auto;
+  }
+  .timeline-grid {
+    display: grid;
+    grid-template-columns: 130px repeat(18, 1fr);
+    gap: 1px;
+    min-width: 760px;
+  }
+  .timeline-grid .month-header {
+    grid-column: 2 / -1;
+    display: grid;
+    grid-template-columns: repeat(18, 1fr);
+    gap: 1px;
+    margin-bottom: 8px;
+    padding-left: 0;
+  }
+  .month-cell {
+    font-size: 10px;
+    color: var(--ink-3);
+    text-align: center;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--line);
+    font-weight: 500;
+  }
+  .month-cell.q { background: var(--surface-2); }
+  .timeline-row {
+    display: contents;
+  }
+  .timeline-label {
+    font-size: 12px;
+    color: var(--ink-2);
+    padding: 6px 12px 6px 0;
+    font-weight: 500;
+    border-right: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+  }
+  .bar-track {
+    grid-column: 2 / -1;
+    display: grid;
+    grid-template-columns: repeat(18, 1fr);
+    gap: 1px;
+    align-items: center;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--line);
+    min-height: 28px;
+  }
+  .bar {
+    height: 18px;
+    border-radius: 4px;
+    font-size: 10px;
+    color: #fff;
+    padding: 0 6px;
+    line-height: 18px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .bar.p0 { background: linear-gradient(135deg, #64748b, #475569); }
+  .bar.p1 { background: linear-gradient(135deg, #06b6d4, #0891b2); }
+  .bar.p2 { background: linear-gradient(135deg, #6366f1, #4f46e5); }
+  .bar.p3 { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+  .bar.p4 { background: linear-gradient(135deg, #a855f7, #9333ea); }
+  .bar.p5 { background: linear-gradient(135deg, #ec4899, #db2777); }
+  .bar.p6 { background: linear-gradient(135deg, #f59e0b, #d97706); }
+
+  /* ========== PHASE CARDS ========== */
+  .phase-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .phase-header {
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+    padding: 18px 22px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 16px;
+    align-items: center;
+  }
+  .phase-num {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--phase-color, var(--primary));
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    letter-spacing: 0.04em;
+  }
+  .phase-name {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--ink);
+    margin: 0;
+  }
+  .phase-duration {
+    font-size: 12px;
+    color: var(--ink-3);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 4px 12px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .phase-body {
+    padding: 22px;
+  }
+  .phase-meta {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 18px;
+    padding-bottom: 18px;
+    border-bottom: 1px dashed var(--line);
+  }
+  .phase-meta .pm-item .pm-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-3);
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .phase-meta .pm-item .pm-value {
+    font-size: 13px;
+    color: var(--ink-2);
+    line-height: 1.4;
+  }
+  .phase-section h4 {
+    margin-top: 16px;
+    margin-bottom: 6px;
+  }
+  .phase-section ul {
+    margin: 0 0 12px;
+    padding-left: 20px;
+  }
+  .phase-section ul li {
+    font-size: 13px;
+    color: var(--ink-2);
+    margin-bottom: 4px;
+  }
+  .phase-apis {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .api-chip {
+    background: var(--primary-soft);
+    color: var(--primary-dark);
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 500;
+    border: 1px solid rgba(79,70,229,0.18);
+  }
+  .api-chip.new {
+    background: #ecfeff;
+    color: #0e7490;
+    border-color: rgba(8,145,178,0.18);
+  }
+
+  /* ========== TABLES ========== */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+  thead th {
+    background: var(--surface-2);
+    text-align: left;
+    padding: 10px 14px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3);
+    font-weight: 600;
+    border-bottom: 1px solid var(--line);
+  }
+  tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink-2);
+    vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--surface-2); }
+
+  /* RACI cells */
+  .raci-r { background: rgba(79,70,229,0.10); color: var(--primary-dark); font-weight: 600; text-align: center; }
+  .raci-a { background: rgba(220,38,38,0.10); color: var(--danger); font-weight: 600; text-align: center; }
+  .raci-c { background: rgba(8,145,178,0.10); color: #0e7490; font-weight: 600; text-align: center; }
+  .raci-i { background: rgba(100,116,139,0.10); color: var(--ink-3); font-weight: 600; text-align: center; }
+
+  /* ========== CALLOUTS ========== */
+  .callout {
+    background: var(--warn-soft);
+    border-left: 3px solid var(--warn);
+    border-radius: var(--radius-sm);
+    padding: 14px 18px;
+    margin: 16px 0;
+    font-size: 13px;
+    color: #7c2d12;
+  }
+  .callout strong { color: var(--warn); }
+  .callout.good {
+    background: var(--good-soft);
+    border-left-color: var(--good);
+    color: #064e3b;
+  }
+  .callout.good strong { color: var(--good); }
+
+  /* ========== RISK CARDS ========== */
+  .risk-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+  .risk-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    box-shadow: var(--shadow);
+  }
+  .risk-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .risk-title {
+    font-weight: 600;
+    color: var(--ink);
+    font-size: 14px;
+  }
+  .severity {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 999px;
+    letter-spacing: 0.06em;
+  }
+  .severity.high { background: #fef2f2; color: var(--danger); border: 1px solid rgba(185,28,28,0.2); }
+  .severity.med { background: var(--warn-soft); color: var(--warn); border: 1px solid rgba(194,65,12,0.2); }
+  .severity.low { background: var(--good-soft); color: var(--good); border: 1px solid rgba(4,120,87,0.2); }
+  .risk-body { font-size: 13px; color: var(--ink-2); }
+  .risk-body strong { color: var(--ink); }
+  .risk-mitigation {
+    font-size: 12px;
+    color: var(--ink-3);
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--line);
+  }
+
+  /* ========== LEGEND ========== */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--ink-3);
+    align-items: center;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+
+  /* ========== FOOTER ========== */
+  footer {
+    background: var(--ink);
+    color: rgba(255,255,255,0.7);
+    padding: 32px 40px;
+    text-align: center;
+    font-size: 13px;
+  }
+  footer p { margin: 4px 0; }
+
+  /* ========== RESPONSIVE ========== */
+  @media (max-width: 960px) {
+    .layout { grid-template-columns: 1fr; padding: 24px; }
+    .toc { position: static; margin-bottom: 24px; }
+    .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    .team-grid { grid-template-columns: 1fr; }
+    .risk-grid { grid-template-columns: 1fr; }
+    .phase-meta { grid-template-columns: 1fr; }
+    .hero { padding: 36px 24px; }
+    .hero h1 { font-size: 32px; }
+  }
+
+  /* ========== PRINT ========== */
+  @media print {
+    body { background: #fff; }
+    .toc { display: none; }
+    .layout { grid-template-columns: 1fr; padding: 0; max-width: none; }
+    .hero { padding: 24px; }
+    .hero h1 { font-size: 24px; }
+    .timeline { overflow: visible; }
+    .phase-card, .team-card, .stat, .risk-card, table { page-break-inside: avoid; box-shadow: none; }
+    section { margin-bottom: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <p class="eyebrow">Project Atlas — Phase 2</p>
+    <h1>Implementation Project Plan</h1>
+    <p class="subtitle">Consolidating ~250 legacy SQL Server stored procedures and views into 19 REST APIs on the USV Stack template, backed by AlloyDB and the d365 source schema.</p>
+    <div class="meta-row">
+      <span class="meta-pill"><strong>19</strong> <span>APIs</span></span>
+      <span class="meta-pill"><strong>~165</strong> <span>endpoints</span></span>
+      <span class="meta-pill"><strong>4</strong> <span>source DBs</span></span>
+      <span class="meta-pill"><strong>~60</strong> <span>USV views ported</span></span>
+      <span class="meta-pill"><strong>2</strong> <span>teams</span></span>
+      <span class="meta-pill"><strong>~17</strong> <span>months</span></span>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+
+  <nav class="toc">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#summary">Executive summary</a></li>
+      <li><a href="#scope">Scope at a glance</a></li>
+      <li><a href="#teams">Teams</a></li>
+      <li><a href="#timeline">Phase timeline</a></li>
+      <li><a href="#phases">Phase detail</a></li>
+      <li><a href="#raci">RACI matrix</a></li>
+      <li><a href="#risks">Risks</a></li>
+      <li><a href="#decisions">Decisions needed</a></li>
+      <li><a href="#governance">Governance</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <!-- ============================================ -->
+    <!-- EXECUTIVE SUMMARY -->
+    <!-- ============================================ -->
+    <section id="summary">
+      <h2><span class="h2-num">01</span> Executive summary</h2>
+      <p class="section-lead">A bounded, parallelizable workstream — not a big-bang cutover.</p>
+
+      <p>Project Atlas Phase 2 retires direct SQL Server access from every consuming application (Boomi flows, EDI engines, RUDI/COMPASS, Salesforce sync, Esker AR connector, internal services) and replaces it with a coherent set of 19 REST APIs built on the USV Stack template. The legacy database surface (~250 canonical procs across 4 SQL Server databases) consolidates to ~165 endpoints, with vendor-specific clones, dated revisions, and version variants collapsed behind parameter-driven contracts.</p>
+
+      <p>The work breaks into <strong>seven sequential phases over ~17 months</strong> with substantial parallelism within each phase. <strong>Two teams own the work end-to-end</strong>: a Platform team owns the foundation (AlloyDB, USV Stack template, shared infra, view ports, CI/CD) and an Integration team owns all 19 APIs and consumer cutovers. Within the Integration team, work is organized into rotating pods aligned to each phase's API cluster, but ownership and on-call responsibility stays with one team.</p>
+
+      <div class="callout good">
+        <strong>Key architectural decision:</strong> API repositories query the <code>d365.*</code> source schema directly in AlloyDB. The ~290 <code>dbo.*</code> base-table mirror views in <code>integration-idb</code> are NOT being ported — they were a query-convenience mirror in the legacy stack and are unnecessary once the API queries <code>d365</code> directly. This drops the view-porting workload from ~360 to ~60 (just the USV business views).
+      </div>
+
+      <p>Source documents this plan implements:</p>
+      <ul>
+        <li><code>MASTER_IMPLEMENTATION_PLAN.md</code> — architectural design, domain map, cross-cutting concerns</li>
+        <li><code>SPROC_VIEW_API_MAPPING.md</code> — per-object mapping (sproc/view → API endpoint)</li>
+        <li><code>aisREADME.md</code>, <code>boomiREADME.md</code> — original per-source planning docs</li>
+      </ul>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- SCOPE -->
+    <!-- ============================================ -->
+    <section id="scope">
+      <h2><span class="h2-num">02</span> Scope at a glance</h2>
+      <p class="section-lead">The deliverable inventory in numbers.</p>
+
+      <div class="stat-grid">
+        <div class="stat">
+          <div class="num">19</div>
+          <div class="label">API projects</div>
+          <div class="sub">17 wrapping legacy + 2 new (Finance, RudiCompass)</div>
+        </div>
+        <div class="stat">
+          <div class="num">~165</div>
+          <div class="label">endpoints</div>
+          <div class="sub">~141 ais/boomi + ~24 net new from integration/rudi</div>
+        </div>
+        <div class="stat">
+          <div class="num">~250</div>
+          <div class="label">canonical procs</div>
+          <div class="sub">down from ~330 after triage of dead variants</div>
+        </div>
+        <div class="stat">
+          <div class="num">~60</div>
+          <div class="label">USV views ported</div>
+          <div class="sub">~290 base mirror views dropped (query d365 directly)</div>
+        </div>
+      </div>
+
+      <h3>Source databases in scope</h3>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:18%">Source DB</th>
+            <th>Surface</th>
+            <th style="width:30%">Net contribution</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ais-idb</code></td>
+            <td>~270 procs (~145 canonical) + several views</td>
+            <td>16 APIs (the bulk of the project)</td>
+          </tr>
+          <tr>
+            <td><code>boomi-idb</code></td>
+            <td>5 views + 3 truncate procs + 3 xref tables</td>
+            <td>+1 API (SalesforceIntegration)</td>
+          </tr>
+          <tr>
+            <td><code>integration-idb</code></td>
+            <td>26 procs (16 in scope) + ~60 USV views in scope</td>
+            <td>+1 API (Finance, partial); folds into 14 existing</td>
+          </tr>
+          <tr>
+            <td><code>rudi-idb</code></td>
+            <td>16 procs + 1 view (all in scope)</td>
+            <td>+1 API (RudiCompass); folds into 4 existing</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- TEAMS -->
+    <!-- ============================================ -->
+    <section id="teams">
+      <h2><span class="h2-num">03</span> Teams</h2>
+      <p class="section-lead">Two teams own the work end-to-end. Platform owns the foundation; Integration owns every API and every consumer cutover.</p>
+
+      <div class="team-grid">
+
+        <div class="team-card" style="--team-color:#0891b2">
+          <div class="team-card-header">
+            <h3>Platform Team</h3>
+            <span class="size">4&ndash;6 eng</span>
+          </div>
+          <p class="role">Foundation &middot; data layer, template, shared infrastructure</p>
+
+          <p class="scope"><span class="scope-label">Owns</span>Everything underneath the API layer: AlloyDB infrastructure, the <code>d365.*</code> source schema readiness, ports of the ~60 in-scope USV business views, the USV Stack template, CI/CD, shared libraries, observability, and the parity-testing harness.</p>
+
+          <p class="scope"><span class="scope-label">Specifically</span>
+          <br>&middot; AlloyDB <code>d365.*</code> schema sign-off (Phase 0 gate)
+          <br>&middot; Port the ~60 USV business views (<code>usvprogramcustomer</code>, <code>usvecoresprodtiresattributes</code>, etc.)
+          <br>&middot; Boomi xref-table DDL + Boomi DB-role provisioning
+          <br>&middot; Materialized-view strategy for <code>SalesforceCustomerV2</code> with refresh
+          <br>&middot; USV Stack template hardening; shared NuGet packages (<code>Usv.Stack.Auth</code>, <code>Common.Data.*</code>)
+          <br>&middot; CI/CD pipeline templates, dev/test AlloyDB instances, secrets management
+          <br>&middot; Shared OIDC auth helper, date-conversion mapper, connection-pool config
+          <br>&middot; Observability (logs / metrics / traces / dashboards / alerting)
+          <br>&middot; Parity-testing harness (run legacy proc + new API, diff outputs)
+          <br>&middot; Schema-migration tooling and playbook
+          <br>&middot; Phase 6: revoke legacy DB access, decommission source SQL Server instances</p>
+
+          <p class="scope"><span class="scope-label">Cadence</span>Front-loaded in Phase 0 (~2 months of heads-down foundation work), then steady-state support throughout Phases 1&ndash;5 (template updates, schema additions, infra issues), then leads Phase 6 decommission.</p>
+
+          <p class="scope"><span class="scope-label">Key external dependencies</span>Source-system DBAs (for <code>d365</code> readiness, <code>vN</code> production-version confirmation), Salesforce admin (owner-ID environment confirmation), networking/security (DB-role provisioning).</p>
+        </div>
+
+        <div class="team-card" style="--team-color:#4f46e5">
+          <div class="team-card-header">
+            <h3>Integration Team</h3>
+            <span class="size">10&ndash;14 eng + PO</span>
+          </div>
+          <p class="role">Delivery &middot; all 19 APIs + all consumer cutovers</p>
+
+          <p class="scope"><span class="scope-label">Owns</span>Every API project, every endpoint, every consumer migration. Builds the APIs in dependency order across Phases 1&ndash;5; runs cutover sprints continuously from Phase 1 onward.</p>
+
+          <p class="scope"><span class="scope-label">All 19 APIs</span>
+          <br><strong>Pilot (P1):</strong> Routes, Platform, RudiCompass, SalesforceIntegration
+          <br><strong>Masters (P2):</strong> Customer, Vendor, Warehouse, Product
+          <br><strong>Dependents (P3):</strong> Program, Delivery, PurchaseOrder, Invoice, TransferOrder
+          <br><strong>Composite (P4):</strong> OrderStatus, Finance
+          <br><strong>Complex (P5):</strong> VendorProgram, InvoiceMatching, EdiOutbound, EdiInbound</p>
+
+          <p class="scope"><span class="scope-label">Internal organization</span>Team rotates into <strong>pods of 2&ndash;4 engineers per phase</strong>, aligned to that phase's API cluster. The pods aren't separate teams &mdash; they're how the team allocates its bandwidth across concurrent APIs within a phase. Pod composition reshuffles each phase so domain knowledge spreads across the team and on-call burden distributes.</p>
+
+          <p class="scope"><span class="scope-label">Cutover responsibilities</span>
+          <br>&middot; Boomi flow reconfig (Salesforce sync, PO flows, others)
+          <br>&middot; EDI engine cutover (810/850/855/856 inbound &amp; outbound)
+          <br>&middot; RUDI/COMPASS cutover
+          <br>&middot; Esker AR connector cutover (external vendor coordination)
+          <br>&middot; Internal services migration off direct DB access
+          <br>&middot; Per-API parity sign-off before legacy access is revoked (handed to Platform team for revocation)</p>
+
+          <p class="scope"><span class="scope-label">Cadence</span>Each shipped API triggers a cutover sprint for its consumers. Legacy DB access for that API's source procs/views is flagged for revocation only after 30 days of clean parity reports.</p>
+        </div>
+
+      </div>
+
+      <div class="callout">
+        <strong>Why two teams, not nine:</strong> the original 9-team breakdown optimized for parallel velocity but added coordination overhead and ownership ambiguity at API boundaries. Consolidating to two teams keeps parallelism inside the Integration team (via phase-aligned pods) while making accountability obvious: Platform owns &ldquo;does it run?&rdquo;, Integration owns &ldquo;does it work and is it being used?&rdquo;. The trade-off is that the Integration team needs strong internal pod coordination &mdash; one tech lead who keeps the dependency graph in their head across phases.
+      </div>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- TIMELINE -->
+    <!-- ============================================ -->
+    <section id="timeline">
+      <h2><span class="h2-num">04</span> Phase timeline</h2>
+      <p class="section-lead">~17-month rollout. Quarters across the top; phase bars show duration and overlap.</p>
+
+      <div class="timeline">
+        <div class="timeline-grid">
+          <div></div>
+          <div class="month-header">
+            <div class="month-cell q">Q1</div>
+            <div class="month-cell q">Q1</div>
+            <div class="month-cell q">Q1</div>
+            <div class="month-cell">Q2</div>
+            <div class="month-cell">Q2</div>
+            <div class="month-cell">Q2</div>
+            <div class="month-cell q">Q3</div>
+            <div class="month-cell q">Q3</div>
+            <div class="month-cell q">Q3</div>
+            <div class="month-cell">Q4</div>
+            <div class="month-cell">Q4</div>
+            <div class="month-cell">Q4</div>
+            <div class="month-cell q">Q5</div>
+            <div class="month-cell q">Q5</div>
+            <div class="month-cell q">Q5</div>
+            <div class="month-cell">Q6</div>
+            <div class="month-cell">Q6</div>
+            <div class="month-cell">Q6</div>
+          </div>
+
+          <div class="timeline-row">
+            <div class="timeline-label">Phase 0 &mdash; Foundation</div>
+            <div class="bar-track">
+              <div class="bar p0" style="grid-column: 1 / span 2;">d365 schema readiness, template hardening</div>
+            </div>
+          </div>
+
+          <div class="timeline-row">
+            <div class="timeline-label">Phase 1 &mdash; Pilot APIs</div>
+            <div class="bar-track">
+              <div class="bar p1" style="grid-column: 3 / span 3;">Routes, Platform, RudiCompass, SFI</div>
+            </div>
+          </div>
+
+          <div class="timeline-row">
+            <div class="timeline-label">Phase 2 &mdash; Foundational masters</div>
+            <div class="bar-track">
+              <div class="bar p2" style="grid-column: 5 / span 4;">Customer, Vendor, Warehouse, Product</div>
+            </div>
+          </div>
+
+          <div class="timeline-row">
+            <div class="timeline-label">Phase 3 &mdash; Dependent reads</div>
+            <div class="bar-track">
+              <div class="bar p3" style="grid-column: 8 / span 4;">Program, Delivery, PO, Invoice, TransferOrder</div>
+            </div>
+          </div>
+
+          <div class="timeline-row">
+            <div class="timeline-label">Phase 4 &mdash; Composite/finance</div>
+            <div class="bar-track">
+              <div class="bar p4" style="grid-column: 11 / span 3;">OrderStatus, Finance</div>
+            </div>
+          </div>
+
+          <div class="timeline-row">
+            <div class="timeline-label">Phase 5 &mdash; Complex integration</div>
+            <div class="bar-track">
+              <div class="bar p5" style="grid-column: 13 / span 4;">VendorProgram, InvoiceMatching, EdiOutbound, EdiInbound</div>
+            </div>
+          </div>
+
+          <div class="timeline-row">
+            <div class="timeline-label">Phase 6 &mdash; Decommission</div>
+            <div class="bar-track">
+              <div class="bar p6" style="grid-column: 16 / span 3;">Revoke DB access, archive legacy</div>
+            </div>
+          </div>
+
+          <div class="timeline-row">
+            <div class="timeline-label" style="color:#f59e0b;font-style:italic;">Cutover sprints</div>
+            <div class="bar-track">
+              <div class="bar p6" style="grid-column: 3 / span 16; opacity:0.55;">Continuous &mdash; Integration team runs one cutover sprint per shipped API</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="legend">
+          <div class="legend-item"><span class="legend-dot" style="background:#475569"></span>Foundation</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#0891b2"></span>Pilot</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#4f46e5"></span>Masters</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#7c3aed"></span>Dependents</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#9333ea"></span>Composite</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#db2777"></span>Complex</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#d97706"></span>Decommission</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- PHASE DETAIL -->
+    <!-- ============================================ -->
+    <section id="phases">
+      <h2><span class="h2-num">05</span> Phase detail</h2>
+      <p class="section-lead">Each phase has a fixed gate: the next phase doesn't start until the gate condition is met.</p>
+
+      <!-- ===== PHASE 0 ===== -->
+      <article class="phase-card">
+        <div class="phase-header">
+          <div class="phase-num" style="--phase-color:#475569">PHASE 0</div>
+          <h3 class="phase-name">Foundation &mdash; sign-offs and template hardening</h3>
+          <span class="phase-duration">~2 months</span>
+        </div>
+        <div class="phase-body">
+          <div class="phase-meta">
+            <div class="pm-item">
+              <div class="pm-label">Lead team</div>
+              <div class="pm-value">Platform (Integration involved in template-feedback loop)</div>
+            </div>
+            <div class="pm-item">
+              <div class="pm-label">APIs shipped</div>
+              <div class="pm-value">None &mdash; foundation work</div>
+            </div>
+            <div class="pm-item">
+              <div class="pm-label">Gate to next phase</div>
+              <div class="pm-value">d365 schema sign-off + green smoke build on hardened template</div>
+            </div>
+          </div>
+
+          <div class="phase-section">
+            <h4>Goals</h4>
+            <ul>
+              <li>Confirm <code>d365.*</code> source tables present in AlloyDB at expected shape (CDC/DMS pipeline coverage check)</li>
+              <li>Port the ~60 in-scope USV business views to AlloyDB</li>
+              <li>Harden the USV Stack template (shared auth, date mapper, connection-pool, observability)</li>
+              <li>Stand up CI/CD pipeline templates and dev/test AlloyDB instances</li>
+              <li>Stand up parity-testing harness (run legacy proc + new API, diff outputs)</li>
+            </ul>
+
+            <h4>Decisions to lock in this phase</h4>
+            <ul>
+              <li>AlloyDB schema naming (keep <code>ais</code>/<code>eta</code>/<code>boomi</code>/<code>rudi</code>/<code>d365</code> verbatim, or rename per USV Stack examples)</li>
+              <li>Schema for ported USV views (single shared schema vs. per-API schema)</li>
+              <li>Connection-string convention (one shared key vs. per-project keys)</li>
+              <li>Promote hardcoded constants to config (DataAreaId, WDNonSig vendor <code>'100687'</code>, Salesforce owner ID, responsibility-ID priority chain)</li>
+              <li><code>vN</code> collapsing: confirm with source team which version is in production for each <code>spOrderStatusDetail</code>v3-v15, <code>spBackorderSummary</code>V2/V3, <code>spGetInvoiceRemainder</code>v2-v4, <code>spRWAInvoiceMatchingService</code>v2-v9</li>
+            </ul>
+
+            <h4>Success criteria</h4>
+            <ul>
+              <li>One reference API project builds clean against the hardened template, hits real AlloyDB, returns one row from <code>d365.custtable</code></li>
+              <li>Parity harness runs: same input to legacy proc + reference API produces matched output</li>
+              <li>All open questions in master plan §I have written answers</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- ===== PHASE 1 ===== -->
+      <article class="phase-card">
+        <div class="phase-header">
+          <div class="phase-num" style="--phase-color:#0891b2">PHASE 1</div>
+          <h3 class="phase-name">Pilot APIs &mdash; validate the template against real shapes</h3>
+          <span class="phase-duration">~3 months</span>
+        </div>
+        <div class="phase-body">
+          <div class="phase-meta">
+            <div class="pm-item">
+              <div class="pm-label">Lead team</div>
+              <div class="pm-value">Integration (pilot pod, ~3 eng) &middot; Platform supports template iteration</div>
+            </div>
+            <div class="pm-item">
+              <div class="pm-label">APIs shipped</div>
+              <div class="pm-value">4 (Routes, Platform, RudiCompass, SalesforceIntegration)</div>
+            </div>
+            <div class="pm-item">
+              <div class="pm-label">Gate to next phase</div>
+              <div class="pm-value">All 4 pilot APIs in prod with at least one consumer cut over</div>
+            </div>
+          </div>
+
+          <div class="phase-section">
+            <h4>APIs in scope</h4>
+            <div class="phase-apis">
+              <span class="api-chip">Routes (eta)</span>
+              <span class="api-chip">Platform</span>
+              <span class="api-chip new">RudiCompass (new)</span>
+              <span class="api-chip">SalesforceIntegration</span>
+            </div>
+
+            <h4>Why these four first</h4>
+            <ul>
+              <li><strong>Routes</strong> &mdash; 7 procs, isolated <code>eta</code> schema, no cross-API dependencies. Best smoke test of the template against pure procs.</li>
+              <li><strong>Platform</strong> &mdash; 5 procs, no business deps. Validates handling of operational/diagnostic endpoints.</li>
+              <li><strong>RudiCompass</strong> &mdash; 4 endpoints, smallest new API. Validates building a brand-new bounded context (no existing legacy proc patterns to follow).</li>
+              <li><strong>SalesforceIntegration</strong> &mdash; 6 view-based read-only endpoints with CST timezone handling and a heavy materialized-view candidate. Validates view sources and the boomi xref-table pattern.</li>
+            </ul>
+
+            <h4>Cutover targets</h4>
+            <ul>
+              <li>Boomi flows: cut Salesforce sync flows from direct DB to <code>/salesforce/*</code></li>
+              <li>RUDI/COMPASS: cut from <code>rudi.COMPASSValidate*</code> direct calls to <code>/compass/*</code></li>
+              <li>ETA-internal consumers cut to <code>/eta/*</code></li>
+            </ul>
+
+            <h4>Success criteria</h4>
+            <ul>
+              <li>4 APIs deployed to prod, on-call rotation established</li>
+              <li>SLO baseline measured (latency p95, error rate, throughput)</li>
+              <li>Materialized-view refresh strategy proven on <code>SalesforceCustomerV2</code></li>
+              <li>Template feedback loop closed: any pain points found by Foundation Squad fixed in template before squads scale up</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- ===== PHASE 2 ===== -->
+      <article class="phase-card">
+        <div class="phase-header">
+          <div class="phase-num" style="--phase-color:#4f46e5">PHASE 2</div>
+          <h3 class="phase-name">Foundational masters &mdash; party + catalog data</h3>
+          <span class="phase-duration">~4 months</span>
+        </div>
+        <div class="phase-body">
+          <div class="phase-meta">
+            <div class="pm-item">
+              <div class="pm-label">Lead team</div>
+              <div class="pm-value">Integration (2 pods, ~6&ndash;8 eng) &middot; Platform supports schema additions</div>
+            </div>
+            <div class="pm-item">
+              <div class="pm-label">APIs shipped</div>
+              <div class="pm-value">4 (Customer, Vendor, Warehouse, Product)</div>
+            </div>
+            <div class="pm-item">
+              <div class="pm-label">Gate to next phase</div>
+              <div class="pm-value">All 4 master APIs in prod; dependent APIs in Phase 3 can integrate against real endpoints</div>
+            </div>
+          </div>
+
+          <div class="phase-section">
+            <h4>APIs in scope</h4>
+            <div class="phase-apis">
+              <span class="api-chip">Customer</span>
+              <span class="api-chip">Vendor</span>
+              <span class="api-chip">Warehouse</span>
+              <span class="api-chip">Product</span>
+            </div>
+
+            <h4>Why this phase</h4>
+            <p>These four are the master-data foundation that 11 of the remaining 13 APIs depend on. Shipping them first unblocks Phase 3 work in parallel.</p>
+
+            <h4>Notable consolidations</h4>
+            <ul>
+              <li>Customer absorbs ~25 ais procs + 4 integration USV procs + 2 rudi procs = ~31 sources → 15 endpoints</li>
+              <li>Customer hard duplicates with integration: <code>USVCustomerLookup</code>, <code>USVCustomerLookupByCustRefAndGroup</code> &mdash; verify byte-identical before consolidating</li>
+              <li>Vendor absorbs 4 rudi procs (blocked-status, payment-method, default-bank-account, details)</li>
+              <li>Warehouse absorbs <code>USVGetAllWarehouseData</code>, <code>USVGetWarehouseDataByExternalCode</code> as new endpoints</li>
+              <li>Product surfaces <code>v_ecoresinstancevalue</code> as a ref-data endpoint</li>
+            </ul>
+
+            <h4>Cutover targets</h4>
+            <ul>
+              <li>Internal services calling <code>spCustomerLookup*</code>, <code>spGetAccountInfo*</code>, <code>spGetWarehouseList</code>, <code>spFindVendorWithIBSAccount</code> directly</li>
+              <li>Promote hardcoded WDNonSig vendor <code>'100687'</code> to config and update Vendor consumers</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- ===== PHASE 3 ===== -->
+      <article class="phase-card">
+        <div class="phase-header">
+          <div class="phase-num" style="--phase-color:#7c3aed">PHASE 3</div>
+          <h3 class="phase-name">Dependent reads &mdash; transactional lookup APIs</h3>
+          <span class="phase-duration">~4 months</span>
+        </div>
+        <div class="phase-body">
+          <div class="phase-meta">
+            <div class="pm-item">
+              <div class="pm-label">Lead team</div>
+              <div class="pm-value">Integration (2&ndash;3 pods, ~8&ndash;10 eng)</div>
+            </div>
+            <div class="pm-item">
+              <div class="pm-label">APIs shipped</div>
+              <div class="pm-value">5 (Program, Delivery, PurchaseOrder, Invoice, TransferOrder)</div>
+            </div>
+            <div class="pm-item">
+              <div class="pm-label">Gate to next phase</div>
+              <div class="pm-value">Invoice in prod with parity passing; PurchaseOrder cut over from Boomi-direct DB</div>
+            </div>
+          </div>
+
+          <div class="phase-section">
+            <h4>APIs in scope</h4>
+            <div class="phase-apis">
+              <span class="api-chip">Program</span>
+              <span class="api-chip">Delivery</span>
+              <span class="api-chip">PurchaseOrder</span>
+              <span class="api-chip">Invoice</span>
+              <span class="api-chip">TransferOrder</span>
+            </div>
+
+            <h4>Notable consolidations</h4>
+            <ul>
+              <li>Invoice absorbs vendor-clone procs (<code>spGetInvoiceDataByVendor_Michelin</code> etc.) behind <code>?vendor=</code> discriminator</li>
+              <li>Delivery absorbs Continental/Pirelli/Yokohama receipt procs behind <code>?vendor=</code> discriminator</li>
+              <li>Delivery absorbs <code>rudi.GetAccountDeliverySettings</code> &mdash; routing decisions for FTP/email/EDI</li>
+              <li>Program adds 3 data-quality endpoints from integration views (<code>vDuplicatePrograms</code>, <code>vProgramsWithNoItems</code>, <code>vProgramTablesWithZeroRecords</code>)</li>
+              <li>PurchaseOrder ships <code>/boomi-export</code> for Boomi PO flow consumers</li>
+            </ul>
+
+            <h4>Cutover targets</h4>
+            <ul>
+              <li>Boomi PO flows cut to <code>/purchase-orders/*</code></li>
+              <li>Invoice consumers (~6 internal services) cut to <code>/invoices/*</code></li>
+              <li>Delivery routing logic in RUDI cut to <code>/delivery/customers/{accountNum}/settings</code></li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- ===== PHASE 4 ===== -->
+      <article class="phase-card">
+        <div class="phase-header">
+          <div class="phase-num" style="--phase-color:#9333ea">PHASE 4</div>
+          <h3 class="phase-name">Composite + finance &mdash; OrderStatus and the new Finance API</h3>
+          <span class="phase-duration">~3 months</span>
+        </div>
+        <div class="phase-body">
+          <div class="phase-meta">
+            <div class="pm-item">
+              <div class="pm-label">Lead team</div>
+              <div class="pm-value">Integration (2 pods, ~6 eng) &middot; Esker pod runs external-vendor coordination</div>
+            </div>
+            <div class="pm-item">
+              <div class="pm-label">APIs shipped</div>
+              <div class="pm-value">2 (OrderStatus, Finance)</div>
+            </div>
+            <div class="pm-item">
+              <div class="pm-label">Gate to next phase</div>
+              <div class="pm-value">Esker connector cut over with 30 days of clean parity reports</div>
+            </div>
+          </div>
+
+          <div class="phase-section">
+            <h4>APIs in scope</h4>
+            <div class="phase-apis">
+              <span class="api-chip">OrderStatus</span>
+              <span class="api-chip new">Finance (new)</span>
+            </div>
+
+            <h4>Why these together</h4>
+            <p>OrderStatus is the largest read domain (~10 endpoints from ~22 sources, with 5 hard duplicates between ais and integration). Finance is the most external-facing cutover (Esker connector reconfiguration, Ventus AR feed). Both depend on Customer, Vendor, Invoice being stable, which Phase 3 guarantees.</p>
+
+            <h4>Critical-path items</h4>
+            <ul>
+              <li>Resolve the 5 OrderStatus hard duplicates (<code>USVOrderStatusDetail</code>, <code>USVOrderStatusSummary</code>, <code>USVOrderStatusSummaryByInvoiceAccount</code>, <code>USVCustomerLookup</code>, <code>USVCustomerLookupByCustRefAndGroup</code>) &mdash; byte-compare or document drift</li>
+              <li>Esker connector cutover: external vendor coordination, cannot slip</li>
+              <li>Quarantined Esker procs (<code>Esker_company_AF</code>, <code>Esker_OutsidePmts_AF</code>) &mdash; resolve <code>v_dirpartytable</code> dependency or ship in degraded state</li>
+              <li>Ventus AR extract: hour-of-day default-date logic must port verbatim</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- ===== PHASE 5 ===== -->
+      <article class="phase-card">
+        <div class="phase-header">
+          <div class="phase-num" style="--phase-color:#db2777">PHASE 5</div>
+          <h3 class="phase-name">Complex integration &mdash; EDI and matching engine</h3>
+          <span class="phase-duration">~4 months</span>
+        </div>
+        <div class="phase-body">
+          <div class="phase-meta">
+            <div class="pm-item">
+              <div class="pm-label">Lead team</div>
+              <div class="pm-value">Integration (3 pods, ~10&ndash;12 eng &mdash; full team focus)</div>
+            </div>
+            <div class="pm-item">
+              <div class="pm-label">APIs shipped</div>
+              <div class="pm-value">4 (VendorProgram, InvoiceMatching, EdiOutbound, EdiInbound)</div>
+            </div>
+            <div class="pm-item">
+              <div class="pm-label">Gate to next phase</div>
+              <div class="pm-value">EDI engine cut over; RWA matching parity passing for 30 days</div>
+            </div>
+          </div>
+
+          <div class="phase-section">
+            <h4>APIs in scope</h4>
+            <div class="phase-apis">
+              <span class="api-chip">VendorProgram</span>
+              <span class="api-chip">InvoiceMatching</span>
+              <span class="api-chip">EdiOutbound</span>
+              <span class="api-chip">EdiInbound</span>
+            </div>
+
+            <h4>Why last</h4>
+            <p>These four depend on most of the other APIs. InvoiceMatching is the most complex logic in the codebase (RWA returns engine, IBS path vs. non-IBS, fractional quantity, discontinue/acquisition overrides). EDI engines have strict cutover windows tied to trading-partner schedules.</p>
+
+            <h4>Critical-path items</h4>
+            <ul>
+              <li>InvoiceMatching: confirm latest <code>spRWAInvoiceMatchingService</code>v2-v9 + IBS variants in production; parity-test against real return claims</li>
+              <li>VendorProgram: 16 endpoints from ~36 sources &mdash; second largest domain. Candidate to split into <code>VendorProgram.Ssp</code> / <code>VendorProgram.Tpna</code> / <code>VendorProgram.Cmp</code> if it grows.</li>
+              <li>EdiOutbound: trading-partner test transactions for each of 810/850/855/856 before cutover</li>
+              <li>EdiInbound: duplicate-check POST contract carefully designed (5 modes: 3way/misc/passthru/ssp/tpna)</li>
+            </ul>
+
+            <h4>Cutover targets</h4>
+            <ul>
+              <li>EDI engine cuts from direct DB to <code>/edi/inbound/*</code> and <code>/edi/outbound/*</code></li>
+              <li>Returns processing UI cuts to <code>POST /invoice-matching/match</code></li>
+              <li>VendorProgram quarterly extracts cut to <code>/vendor-programs/*</code></li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- ===== PHASE 6 ===== -->
+      <article class="phase-card">
+        <div class="phase-header">
+          <div class="phase-num" style="--phase-color:#d97706">PHASE 6</div>
+          <h3 class="phase-name">Decommission &mdash; revoke legacy access, archive sources</h3>
+          <span class="phase-duration">~2 months</span>
+        </div>
+        <div class="phase-body">
+          <div class="phase-meta">
+            <div class="pm-item">
+              <div class="pm-label">Lead team</div>
+              <div class="pm-value">Platform leads decommission &middot; Integration confirms zero-consumer state</div>
+            </div>
+            <div class="pm-item">
+              <div class="pm-label">APIs shipped</div>
+              <div class="pm-value">None &mdash; cleanup work</div>
+            </div>
+            <div class="pm-item">
+              <div class="pm-label">Gate to project close</div>
+              <div class="pm-value">Zero direct-DB reads observed for 30 days; legacy SQL Server instances decommissioned</div>
+            </div>
+          </div>
+
+          <div class="phase-section">
+            <h4>Goals</h4>
+            <ul>
+              <li>Audit DB-side query logs to confirm no direct reads remain (only API + admin access)</li>
+              <li>Revoke read-only DB roles from all consumer applications</li>
+              <li>Drop the ~125 dead-code variant procs flagged in §A triage (backups, dated revisions, version-suffixed)</li>
+              <li>Archive the 4 source SQL Server databases (snapshot + retire)</li>
+              <li>Final documentation pass; close all open questions; publish API consumer migration guide</li>
+            </ul>
+
+            <h4>Exceptions to plan for</h4>
+            <ul>
+              <li>Boomi xref-table truncate procs remain as DB objects (Boomi calls directly)</li>
+              <li>DBA/maintenance procs (<code>AzureSQLMaintenance</code>, <code>CommandExecute</code>, etc.) replaced with AlloyDB-native equivalents, not just dropped</li>
+              <li>Any consumer that hasn't migrated by this phase requires escalation; no extension by default</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+    </section>
+
+    <!-- ============================================ -->
+    <!-- RACI -->
+    <!-- ============================================ -->
+    <section id="raci">
+      <h2><span class="h2-num">06</span> RACI matrix</h2>
+      <p class="section-lead">R = Responsible &middot; A = Accountable &middot; C = Consulted &middot; I = Informed</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Workstream</th>
+            <th style="width:18%">Platform Team</th>
+            <th style="width:18%">Integration Team</th>
+            <th style="width:22%">External / Other</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>d365 schema readiness in AlloyDB</td>
+            <td class="raci-a">A/R</td>
+            <td class="raci-c">C (consumer of)</td>
+            <td>Source-system DBAs (C)</td>
+          </tr>
+          <tr>
+            <td>USV view ports (~60 views)</td>
+            <td class="raci-a">A/R</td>
+            <td class="raci-c">C (specifies what's needed)</td>
+            <td>&mdash;</td>
+          </tr>
+          <tr>
+            <td>USV Stack template hardening</td>
+            <td class="raci-a">A/R</td>
+            <td class="raci-c">C (template feedback loop)</td>
+            <td>&mdash;</td>
+          </tr>
+          <tr>
+            <td>CI/CD pipelines &amp; observability</td>
+            <td class="raci-a">A/R</td>
+            <td class="raci-i">I</td>
+            <td>&mdash;</td>
+          </tr>
+          <tr>
+            <td>Shared libraries (auth, date mapper, common.data)</td>
+            <td class="raci-a">A/R</td>
+            <td class="raci-c">C</td>
+            <td>&mdash;</td>
+          </tr>
+          <tr>
+            <td>Parity-testing harness (infrastructure)</td>
+            <td class="raci-a">A/R</td>
+            <td class="raci-c">C (writes the test cases)</td>
+            <td>&mdash;</td>
+          </tr>
+          <tr>
+            <td>API delivery (all 19 APIs)</td>
+            <td class="raci-c">C (template support)</td>
+            <td class="raci-a">A/R</td>
+            <td>Domain SMEs (C)</td>
+          </tr>
+          <tr>
+            <td>Per-API parity sign-off</td>
+            <td class="raci-c">C</td>
+            <td class="raci-a">A/R</td>
+            <td>&mdash;</td>
+          </tr>
+          <tr>
+            <td>Consumer migration / cutovers</td>
+            <td class="raci-i">I</td>
+            <td class="raci-a">A/R</td>
+            <td>Boomi / EDI / Esker / Salesforce / RUDI owners (R)</td>
+          </tr>
+          <tr>
+            <td>Hardcoded-constant promotion to config</td>
+            <td class="raci-c">C</td>
+            <td class="raci-a">A/R</td>
+            <td>Domain SMEs (C)</td>
+          </tr>
+          <tr>
+            <td>vN proc-version confirmation</td>
+            <td class="raci-i">I</td>
+            <td class="raci-r">R</td>
+            <td>Source-system DBAs (A)</td>
+          </tr>
+          <tr>
+            <td>Hard-duplicate proc consolidation (5 ais ↔ integration pairs)</td>
+            <td class="raci-c">C</td>
+            <td class="raci-a">A/R</td>
+            <td>&mdash;</td>
+          </tr>
+          <tr>
+            <td>External-vendor cutover coordination (Esker, EDI)</td>
+            <td class="raci-i">I</td>
+            <td class="raci-a">A/R</td>
+            <td>External vendors (R)</td>
+          </tr>
+          <tr>
+            <td>Legacy DB read-only role revocation</td>
+            <td class="raci-a">A/R</td>
+            <td class="raci-c">C (confirms zero-consumer state)</td>
+            <td>Security / IAM (C)</td>
+          </tr>
+          <tr>
+            <td>Decommission legacy SQL Server instances</td>
+            <td class="raci-a">A/R</td>
+            <td class="raci-i">I</td>
+            <td>Infrastructure / Ops (R)</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- RISKS -->
+    <!-- ============================================ -->
+    <section id="risks">
+      <h2><span class="h2-num">07</span> Risks</h2>
+      <p class="section-lead">Top risks and mitigations. Severity reflects likelihood &times; impact, not just impact alone.</p>
+
+      <div class="risk-grid">
+
+        <div class="risk-card">
+          <div class="risk-header">
+            <span class="risk-title">d365 schema not actually ready in AlloyDB</span>
+            <span class="severity high">High</span>
+          </div>
+          <div class="risk-body">
+            <p>Phase 0 assumes the data-platform team has the <code>d365.*</code> tables landed in AlloyDB at the right shape. If CDC/DMS coverage is incomplete, every API project blocks immediately.</p>
+            <div class="risk-mitigation"><strong>Mitigation:</strong> dedicated Phase 0 sign-off gate; written confirmation per table; smoke-test query against each Phase 1 API's source tables before that team starts work.</div>
+          </div>
+        </div>
+
+        <div class="risk-card">
+          <div class="risk-header">
+            <span class="risk-title">vN proc version drift hides production behavior</span>
+            <span class="severity high">High</span>
+          </div>
+          <div class="risk-body">
+            <p>Procs like <code>spOrderStatusDetail</code>v3-v15 may not be byte-identical; consolidating to "the latest" may silently change behavior for some consumers.</p>
+            <div class="risk-mitigation"><strong>Mitigation:</strong> Phase 0 source-team confirmation per <code>vN</code> family; parity-testing harness diffs API output against the production proc for 30 days before legacy access is revoked.</div>
+          </div>
+        </div>
+
+        <div class="risk-card">
+          <div class="risk-header">
+            <span class="risk-title">Esker / EDI cutover misses scheduled window</span>
+            <span class="severity high">High</span>
+          </div>
+          <div class="risk-body">
+            <p>External vendor schedules (Esker AR connector, EDI trading-partner test transactions) cannot slip without external impact. Phase 4 and Phase 5 both have hard external dependencies.</p>
+            <div class="risk-mitigation"><strong>Mitigation:</strong> Migration team locks vendor cutover dates 3 months in advance; carry both code paths (DB + API) for 30 days post-cutover with feature-flagged rollback.</div>
+          </div>
+        </div>
+
+        <div class="risk-card">
+          <div class="risk-header">
+            <span class="risk-title">Hard-duplicate procs have drifted bodies</span>
+            <span class="severity med">Medium</span>
+          </div>
+          <div class="risk-body">
+            <p>5 known hard duplicates between ais and integration (USVOrderStatusDetail/Summary/SummaryByInvoiceAccount, USVCustomerLookup, USVCustomerLookupByCustRefAndGroup). If bodies have diverged, "consolidating" picks one consumer's behavior over another.</p>
+            <div class="risk-mitigation"><strong>Mitigation:</strong> byte-compare in Phase 2 before consolidating; if drift exists, ship the union of both behaviors with an opt-in flag and document the difference.</div>
+          </div>
+        </div>
+
+        <div class="risk-card">
+          <div class="risk-header">
+            <span class="risk-title">RWA matching engine parity is hard to validate</span>
+            <span class="severity med">Medium</span>
+          </div>
+          <div class="risk-body">
+            <p>InvoiceMatching has the densest business logic in the codebase &mdash; return-reason resolution, IBS path branching, fractional quantity handling, discontinue/acquisition overrides. Hard to construct exhaustive parity test cases.</p>
+            <div class="risk-mitigation"><strong>Mitigation:</strong> Phase 5 includes 30-day shadow-mode running (route real traffic to both; compare; alert on mismatch); ramp cutover from 10% to 100% over 4 weeks.</div>
+          </div>
+        </div>
+
+        <div class="risk-card">
+          <div class="risk-header">
+            <span class="risk-title">VendorProgram domain too large to ship as one</span>
+            <span class="severity med">Medium</span>
+          </div>
+          <div class="risk-body">
+            <p>16 endpoints, ~36 source objects, mixing SSP/TPNA/CMP/Sellout/DirectSales sub-domains. Single-API approach risks a long stabilization tail.</p>
+            <div class="risk-mitigation"><strong>Mitigation:</strong> Phase 5 contingency to split into <code>VendorProgram.Ssp</code> / <code>VendorProgram.Tpna</code> / <code>VendorProgram.Cmp</code> if velocity stalls; decision gate at end of week 6 of phase.</div>
+          </div>
+        </div>
+
+        <div class="risk-card">
+          <div class="risk-header">
+            <span class="risk-title">Quarantined Esker procs cannot be made functional</span>
+            <span class="severity med">Medium</span>
+          </div>
+          <div class="risk-body">
+            <p><code>Esker_company_AF</code> and <code>Esker_OutsidePmts_AF</code> are flagged <code>QUARANTINED</code> in source &mdash; they reference an excluded view (<code>v_dirpartytable</code>). If the dependency can't be resolved, those endpoints ship in a degraded state or not at all.</p>
+            <div class="risk-mitigation"><strong>Mitigation:</strong> Phase 0 includes resolving the <code>v_dirpartytable</code> question; if unresolvable, design degraded-mode contracts (return what we can; flag missing fields) by Phase 4 start.</div>
+          </div>
+        </div>
+
+        <div class="risk-card">
+          <div class="risk-header">
+            <span class="risk-title">Consumer migration backlog grows unbounded</span>
+            <span class="severity med">Medium</span>
+          </div>
+          <div class="risk-body">
+            <p>If consumers don't migrate at the cadence APIs ship, Phase 6 decommission slips and the project doesn't actually finish (legacy access stays open).</p>
+            <div class="risk-mitigation"><strong>Mitigation:</strong> Migration team cadence is one cutover sprint per shipped API; quarterly steering review of unmigrated consumer count; clear deprecation timeline communicated to all consumer owners at project kickoff.</div>
+          </div>
+        </div>
+
+        <div class="risk-card">
+          <div class="risk-header">
+            <span class="risk-title">Materialized view refresh on SalesforceCustomerV2</span>
+            <span class="severity low">Low</span>
+          </div>
+          <div class="risk-body">
+            <p>~50 columns, 14 joins, GROUP BY of 50 columns &mdash; the heaviest endpoint. Refresh strategy (scheduled vs. CDC-triggered vs. logical replication) is undecided.</p>
+            <div class="risk-mitigation"><strong>Mitigation:</strong> prototype in Phase 1 as part of SalesforceIntegration delivery; pick the simplest approach that meets Salesforce's delta-pull SLO.</div>
+          </div>
+        </div>
+
+        <div class="risk-card">
+          <div class="risk-header">
+            <span class="risk-title">Hardcoded constants miswire across environments</span>
+            <span class="severity low">Low</span>
+          </div>
+          <div class="risk-body">
+            <p>Vendor <code>'100687'</code> in <code>spGetWDNonSig</code>, Salesforce owner ID <code>'0056e00000BuxsJ'</code>, responsibility-ID priority chain &mdash; if these promote to config without per-env values, non-prod miswires silently.</p>
+            <div class="risk-mitigation"><strong>Mitigation:</strong> Phase 0 inventory of every hardcoded value; per-env config files reviewed by domain SMEs before each phase ships.</div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- DECISIONS NEEDED -->
+    <!-- ============================================ -->
+    <section id="decisions">
+      <h2><span class="h2-num">08</span> Decisions needed before Phase 0 kickoff</h2>
+      <p class="section-lead">From master plan §I &mdash; resolve these in the project kickoff to avoid blocking later phases.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width:5%">#</th>
+            <th>Decision</th>
+            <th style="width:18%">Owner</th>
+            <th style="width:14%">Phase blocked</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Confirm <code>d365.*</code> source tables present in AlloyDB at expected schema/column shape (CDC pipeline, DMS replication, etc.)</td>
+            <td>Platform team</td>
+            <td>Phase 0 gate</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>Schema names in AlloyDB &mdash; keep <code>ais</code>/<code>eta</code>/<code>boomi</code>/<code>rudi</code>/<code>d365</code> verbatim or rename per USV Stack examples?</td>
+            <td>Architecture + Platform team</td>
+            <td>Phase 0</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Schema for ported USV views &mdash; single shared <code>usv</code> schema vs. per-API schema?</td>
+            <td>Architecture + Platform team</td>
+            <td>Phase 0</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Hardcoded constants &mdash; promote to config or pass as parameters? (DataAreaId, WDNonSig vendor, Salesforce owner ID)</td>
+            <td>Architecture + Domain SMEs</td>
+            <td>Phase 1</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td><code>vN</code> collapsing &mdash; which version is in production for each multi-version proc family?</td>
+            <td>Source team (DBAs)</td>
+            <td>Phase 2&ndash;5 (per family)</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>Connection-string convention &mdash; one shared key vs. per-project keys?</td>
+            <td>Platform team</td>
+            <td>Phase 0</td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td>API name for boomi &mdash; <code>SalesforceIntegration</code>, <code>BoomiSync</code>, or <code>SalesforceSync</code>?</td>
+            <td>Architecture</td>
+            <td>Phase 1</td>
+          </tr>
+          <tr>
+            <td>8</td>
+            <td>Salesforce Owner ID fallback (<code>'0056e00000BuxsJ'</code>) &mdash; per-env config?</td>
+            <td>Salesforce admin</td>
+            <td>Phase 1</td>
+          </tr>
+          <tr>
+            <td>9</td>
+            <td>Materialized-view strategy for <code>SalesforceCustomerV2</code> &mdash; AlloyDB MV with refresh, or logical replication?</td>
+            <td>Platform team + Integration pilot pod</td>
+            <td>Phase 1</td>
+          </tr>
+          <tr>
+            <td>10</td>
+            <td>Inbound Salesforce → AX flows &mdash; in scope for a future API?</td>
+            <td>Architecture</td>
+            <td>Phase 6 (out-of-scope confirmation)</td>
+          </tr>
+          <tr>
+            <td>11</td>
+            <td>Boomi xref-load access path &mdash; direct DB writes from Boomi continue?</td>
+            <td>Boomi team + Platform team</td>
+            <td>Phase 1</td>
+          </tr>
+          <tr>
+            <td>12</td>
+            <td>Hard-duplicate procs &mdash; byte-identical or drifted? (5 ais ↔ integration pairs)</td>
+            <td>Source team + parity harness</td>
+            <td>Phase 2 (Customer), Phase 4 (OrderStatus)</td>
+          </tr>
+          <tr>
+            <td>13</td>
+            <td><code>rudi.GetVendorDetails</code> param naming &mdash; <code>@CustomerAccount</code> is misleading; confirm with rudi team</td>
+            <td>Rudi team</td>
+            <td>Phase 2</td>
+          </tr>
+          <tr>
+            <td>14</td>
+            <td><code>rudi.GetInvoicePostedDate</code> TVP &mdash; AlloyDB equivalent shape; JSON array vs. composite type?</td>
+            <td>Architecture</td>
+            <td>Phase 3</td>
+          </tr>
+          <tr>
+            <td>15</td>
+            <td>Esker schedule &mdash; does Esker call procs directly today (and switch to API), or push from a scheduled job?</td>
+            <td>Esker connector owner</td>
+            <td>Phase 4</td>
+          </tr>
+          <tr>
+            <td>16</td>
+            <td>Quarantined Esker procs &mdash; unblock <code>v_dirpartytable</code> dependency or ship degraded?</td>
+            <td>Platform team</td>
+            <td>Phase 4</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- GOVERNANCE -->
+    <!-- ============================================ -->
+    <section id="governance">
+      <h2><span class="h2-num">09</span> Governance &amp; cadence</h2>
+      <p class="section-lead">Lightweight ceremonies aligned to the phase gates.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width:22%">Ceremony</th>
+            <th style="width:14%">Cadence</th>
+            <th>Purpose</th>
+            <th style="width:22%">Attendees</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Pod standup</td>
+            <td>Daily</td>
+            <td>Within-pod coordination (per-phase Integration pods + Platform team)</td>
+            <td>Pod members</td>
+          </tr>
+          <tr>
+            <td>Integration team sync</td>
+            <td>Weekly</td>
+            <td>Cross-pod dependency tracking, dependency-graph review across concurrent APIs, on-call rotation</td>
+            <td>Integration tech lead + pod leads</td>
+          </tr>
+          <tr>
+            <td>Platform &harr; Integration sync</td>
+            <td>Weekly</td>
+            <td>Template-feedback loop, schema additions needed, infra blockers</td>
+            <td>Platform lead + Integration tech lead</td>
+          </tr>
+          <tr>
+            <td>Cutover review</td>
+            <td>Weekly</td>
+            <td>Per-API consumer migration status, parity report review, 30-day countdown to legacy revoke</td>
+            <td>Integration team PO + relevant pod + consumer owners</td>
+          </tr>
+          <tr>
+            <td>Architecture review</td>
+            <td>Bi-weekly</td>
+            <td>Open-question resolution, cross-cutting concern adjustments</td>
+            <td>Architect + Platform lead + Integration tech lead</td>
+          </tr>
+          <tr>
+            <td>Phase gate review</td>
+            <td>End of each phase</td>
+            <td>Sign-off on phase exit criteria; go/no-go for next phase; pod reshuffle for next phase</td>
+            <td>Both team leads + project sponsor</td>
+          </tr>
+          <tr>
+            <td>Steering committee</td>
+            <td>Monthly</td>
+            <td>Risk review, decommission timeline, consumer-migration backlog</td>
+            <td>Project sponsor + dept heads + both team leads</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Phase gate criteria (summary)</h3>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:18%">Gate</th>
+            <th>Exit criterion</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Phase 0 → 1</td><td><code>d365.*</code> schema sign-off, USV Stack template smoke test passes, parity harness operational, all decisions §08 #1-3 resolved</td></tr>
+          <tr><td>Phase 1 → 2</td><td>4 pilot APIs in prod, on-call rotation live, SLO baselines measured, template feedback applied</td></tr>
+          <tr><td>Phase 2 → 3</td><td>Customer/Vendor/Warehouse/Product in prod, hard-duplicate consolidations resolved, dependent APIs can integrate against real endpoints</td></tr>
+          <tr><td>Phase 3 → 4</td><td>Invoice in prod with parity passing, PurchaseOrder Boomi cutover complete</td></tr>
+          <tr><td>Phase 4 → 5</td><td>Esker connector cut over with 30 days clean parity, OrderStatus parity passing</td></tr>
+          <tr><td>Phase 5 → 6</td><td>EDI engines cut over, RWA matching parity passing for 30 days, all 19 APIs in prod</td></tr>
+          <tr><td>Phase 6 close</td><td>Zero direct-DB reads observed for 30 days, legacy SQL Server instances decommissioned, dead-code variants dropped</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <p><strong>Project Atlas Phase 2 &mdash; Implementation Project Plan</strong></p>
+  <p>Companion documents: <code>MASTER_IMPLEMENTATION_PLAN.md</code> &middot; <code>SPROC_VIEW_API_MAPPING.md</code> &middot; <code>aisREADME.md</code> &middot; <code>boomiREADME.md</code></p>
+</footer>
+
+</body>
+</html>
