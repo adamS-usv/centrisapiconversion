@@ -7,18 +7,19 @@
 
 Of the 322 tables profiled, **63 exceed the 5M-row / 1-GB threshold and get a partition strategy**; the other 246 stay as plain heap tables with a B-tree on `DataAreaId` + business key (no partitioning). This document is the consolidated list of those 63, and the SQL file is the command set to build their partitions.
 
-### Three strategies in play
+### Two strategies in play (revised 2026-07-24)
 
 | Strategy | When | How it's built |
 |---|---|---|
-| **RANGE** | Strong business/audit date column, multi-year spread | `PARTITION BY RANGE (<date>)`; monthly if ≥50M rows, quarterly otherwise; **+ a `DEFAULT` partition** on every table to absorb migrated `1900-01-01` and any out-of-range rows |
-| **LIST + RANGE** | Above **and** ≥4 `DataAreaId` values in a finance/invoice/settlement domain | Two-level, **`DataAreaId` first**: `PARTITION BY LIST (dataareaid)`, each legal entity sub-partitioned `PARTITION BY RANGE (<date>)`. See ordering note below. |
+| **LIST + RANGE** (composite) | Any table with a usable business/audit date column **and** a `dataareaid` column (all 43 date-partitioned tables) | Two-level, **`DataAreaId` first**: `PARTITION BY LIST (dataareaid)`; each listed legal entity is sub-partitioned `PARTITION BY RANGE (<date>)` (monthly if ≥50M rows, quarterly otherwise) **+ a per-entity date `DEFAULT`** for `1900`/out-of-range rows; plus one **plain-leaf `<tbl>_edef`** catching every unlisted entity. See ordering note below. |
 | **HASH** | ≥10M rows but audit columns stuck at `1900-01-01` and no usable business date | `PARTITION BY HASH (recid)`, 4 / 8 / 16 partitions by size |
 
-> **Partition ordering (revised 2026-07-24): `DataAreaId` is the leading key, not the date.** The consumers read these tables with the legal-entity predicate almost always present and the business-date predicate often *absent* (`sproc-partition-fit-analysis.md` §2–3: "DataAreaId is the one dimension that aligns"). Making `LIST (dataareaid)` the top level prunes to a single entity subtree on the common access path; the `RANGE (<date>)` sub-level still prunes by date window for the future search APIs (`?startDate&endDate&legalEntity`). This inverts the earlier RANGE→LIST recommendation.
+> Previously the 32 "RANGE" tables were single-level (date only) and only the 11 finance tables were composite. Per stakeholder direction (queries filter legal entity first), **all 43 date-partitioned tables are now composite `LIST(dataareaid) → RANGE(date)`.** 27 of the 32 former RANGE tables are single-entity today (`40` operations, or `dat` shared GL/product/system), so their LIST layer is a 1-entity wrapper + `_edef` leaf — a near-free add (+1 partition) that future-proofs multi-entity growth and lets every query's `dataareaid` predicate prune uniformly.
+
+> **Partition ordering: `DataAreaId` is the leading key, not the date.** Consumers read these tables with the legal-entity predicate almost always present and the business-date predicate often *absent* (`sproc-partition-fit-analysis.md` §2–3: "DataAreaId is the one dimension that aligns"). `LIST (dataareaid)` on top prunes to a single entity subtree on the common access path; the `RANGE (<date>)` sub-level still prunes by date window for the future search APIs (`?startDate&endDate&legalEntity`).
 
 > ⚠️ **Two caveats (read before running DDL):**
-> 1. **Legal-entity codes confirmed and trimmed from live data (2026-07-24).** The full 37-entity universe (incl. `dat`, the D365 default company) is documented in `create-partitions.sql` as `d365.all_dataareaids()` (helper 1h). Rather than apply all 37 to every table (~35–40k leaf partitions, mostly empty), each of the 11 composite tables gets an **explicit `ARRAY[...]` trimmed to the entities it actually holds with ≥100k rows** — verified by `_dataareaid_counts.sql` against Primal. The small-entity tail (and any future entity) falls into the per-table entity `DEFAULT` (`<tbl>_edef`), which is itself `RANGE(date)`-partitioned so tail rows still date-prune. This holds the 11 tables to **~3,500 partitions total**. Kept lists: `vendsettlement`/`vendtrans` `40,99,20,95,70`; `ledgertransvoucherlink` `99,20,40,95,70,30`; `custtrans` `40,20,30`; `custinvoicetrans` `40,20,70`; `custinvoicejour`/`vendinvoicejour` `40,20`; `salesline` `40,70`; `salestable`/`purchline` `40`; `generaljournalentry` `dat` (single-entity). **Case matters:** alpha codes are stored lowercase (`dat`,`divp`,`divt`,`sff`); LIST values must match exactly.
+> 1. **Legal-entity codes confirmed and trimmed from live data (2026-07-24).** The full 37-entity universe (incl. `dat`, the D365 default company) is in `create-partitions.sql` as `d365.all_dataareaids()` (helper 1h). Rather than apply all 37 everywhere (~35–40k mostly-empty leaves), each composite table gets an **explicit `ARRAY[...]` trimmed to the entities it actually holds with ≥100k rows** — verified against Primal (`_dataareaid_counts.sql` for the 11 finance tables, `_dataareaid_counts_range.sql` for the other 32). The sub-100k tail (and any future entity) falls into the **plain-leaf `<tbl>_edef`** (a single catch-all table, *not* date-subpartitioned — the tail is small enough that a leaf scans fast and a full date subtree there would just be empty bloat). Multi-entity kept lists: `vendsettlement`/`vendtrans` `40,99,20,95,70`; `ledgertransvoucherlink` `99,20,40,95,70,30`; `custsettlement`/`custtrans` `40,20,30`; `custinvoicetrans` `40,20,70`; `taxtrans`/`taxjournaltrans` `40,70`; `ledgerjournaltable` `40,20`; `custinvoicejour`/`vendinvoicejour` `40,20`; `salesline` `40,70`. Single-entity tables: the rest (`40`, or `dat` for `generaljournalentry`/`generaljournalaccountentry`/`ecoresvalue`/`ecorestextvalue`/`subledger…`/`sysuserlog`). **Case matters:** alpha codes are stored lowercase (`dat`,`divp`,`divt`,`sff`); LIST values must match exactly.
 > 2. **Column definitions are out of scope here.** These recommendations are partition *strategy* only. The `CREATE TABLE` column lists come from the AlloyDB schema-generation step; the SQL file supplies the exact `PARTITION BY …` clause to append to each generated table, plus all child-partition commands.
 
 ### Fivetran ID index
@@ -27,11 +28,11 @@ Every partitioned parent also gets a **btree index on `recid`** (Section 6 of th
 
 ---
 
-## RANGE tables (32) — single-level, monthly/quarterly + DEFAULT
+## Composite tables, single-entity-dominant (32) — `LIST(dataareaid) → RANGE(date)`
 
-Partition counts are child partitions created **through 2028-12** (delivery-date tables through 2029-12), excluding the DEFAULT partition.
+These are the former single-level RANGE tables, now composite. `Date sub-key` is the RANGE column under each entity; `# date parts` is the date children **per entity subtree** (through 2028-12, delivery tables through 2029-12, excluding DEFAULTs) — total leaves ≈ `# date parts × (kept entities + 1 edef)`. **All are single-entity (`40`, or `dat` for the shared GL/product/system tables) EXCEPT:** `custsettlement` (`40,20,30`), `taxtrans` (`40,70`), `taxjournaltrans` (`40,70`), `ledgerjournaltable` (`40,20`). Everything below the ≥100k-row cut → the `<tbl>_edef` leaf. Exact per-table lists live in `create-partitions.sql` Sections 2–3.
 
-| Phase | Table | Rows | Size (GB) | Key column | Interval | Data window | # parts |
+| Phase | Table | Rows | Size (GB) | Date sub-key | Interval | Data window | # date parts |
 |:--:|---|--:|--:|---|:--:|:--:|--:|
 | 4 | `generaljournalaccountentry` | 475.0M | 421.6 | `modifieddatetime` | monthly | 2020-10 → | 99 |
 | 3 | `inventtrans` | 495.2M | 365.0 | `datephysical` | monthly | 2019-01 → (pre-2019 → DEFAULT) | 120 |
@@ -119,12 +120,12 @@ No usable date column (audit columns at `1900-01-01`); partition count sized to 
 
 | Strategy | Tables | Child partitions created (through 2028/29) |
 |---|--:|--:|
-| RANGE (single-level) | 32 | ~1,908 + 32 DEFAULT |
-| LIST + RANGE (composite, DataAreaId first) | 11 | ~1,048 date-buckets **× (N entities + 1 `_edef`)**, + a date DEFAULT per entity subtree |
+| LIST + RANGE composite — single-entity-dominant (former RANGE) | 32 | ~date-buckets **× (kept entities + 1 `_edef` leaf)**; 27 are 1-entity so ≈ single-level count +1 leaf each; 4 multi-entity add 1–2 subtrees |
+| LIST + RANGE composite — multi-entity finance | 11 | ~date-buckets **× (kept entities + 1 `_edef` leaf)**, + a per-entity date DEFAULT |
 | HASH | 20 | 116 |
-| **Total flagged for partitioning** | **63** | **grows with confirmed entity count** |
+| **Total flagged for partitioning** | **63** | **~4,000–4,500 leaves** (with the ≥100k-row trim) |
 
-> The composite count multiplies with the entity list: each of the 11 tables builds its full set of date children **once per legal entity plus once for `_edef`**. With the seed `['40','30']` that's ×3 per table; with the full confirmed lists (up to 17 for `vendinvoicejour`) it is materially larger. This is the intended cost of `DataAreaId`-first pruning — the planner only ever probes one entity subtree per query. If any entity is tiny, consider a coarser (quarterly) date sub-level or leaving it in `_edef`.
+> Composite count = per-table date children **× number of kept entities**, + one `_edef` leaf per table. Because the entity lists are trimmed to ≥100k-row entities (mostly 1 per table; max 6), the total lands around ~4,000–4,500 leaves — versus ~35–40k if the full 37-entity list were applied everywhere. `_edef` is a single plain leaf (not date-subpartitioned), so it adds exactly one partition per table. The planner only ever probes one entity subtree per query (dataareaid is always filtered).
 
 Remaining **259** in-scope tables: no partitioning (heap + B-tree on `DataAreaId` + business key).
 

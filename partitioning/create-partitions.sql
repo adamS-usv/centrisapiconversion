@@ -16,17 +16,19 @@
 --            (2029 for future-dated delivery tables).
 --
 -- COMPOSITE ORDER (revised 2026-07-24)
---   The 11 finance/invoice/settlement tables are partitioned
+--   ALL date-partitioned tables (Sections 2, 3, 4 = 43 tables) are partitioned
 --   **dataareaid FIRST, date SECOND**:
 --        PARTITION BY LIST (dataareaid)
---          -> each legal entity is itself PARTITION BY RANGE (<date>)
+--          -> each listed legal entity is itself PARTITION BY RANGE (<date>)
+--          -> plus a plain-leaf entity DEFAULT (<tbl>_edef) for the rest
 --   Rationale: the sprocs/views read these tables with the legal-entity
 --   predicate almost always present and the business-date predicate often
 --   ABSENT (see sproc-partition-fit-analysis.md §2-3 — "DataAreaId is the one
 --   dimension that aligns"). Making dataareaid the leading partition key lets
 --   the planner prune to a single entity subtree on the common access path,
 --   while the RANGE(date) sub-level still prunes by date window for the future
---   search APIs (?startDate&endDate&legalEntity).
+--   search APIs (?startDate&endDate&legalEntity). The 20 HASH tables (Section 5,
+--   no usable date) stay HASH(recid) and are unaffected.
 --
 -- WHAT THIS SCRIPT DOES NOT DO
 --   * It does NOT emit the column lists. Partition recommendations are
@@ -37,12 +39,15 @@
 --
 -- LEGAL-ENTITY (dataareaid) CODES
 --   Each composite table takes an ARRAY of dataareaid codes. Every entity in
---   the array gets its own sub-partition; a per-table DEFAULT entity bucket
---   ("<tbl>_edef") absorbs any legal entity NOT in the array, so the build is
---   always correct regardless of code-list confidence. Each of the 11 tables
---   passes an explicit ARRAY[...] trimmed to the entities it actually holds with
---   >=100k rows (verified live 2026-07-24; see _dataareaid_counts.sql). The full
---   37-entity universe is kept as reference in d365.all_dataareaids() (helper 1h).
+--   the array gets its own RANGE(date) sub-partition; a per-table plain-leaf
+--   DEFAULT ("<tbl>_edef") absorbs any legal entity NOT in the array, so the
+--   build is always correct regardless of code-list confidence. Every composite
+--   table passes an explicit ARRAY[...] trimmed to the entities it actually holds
+--   with >=100k rows (verified live 2026-07-24; see _dataareaid_counts.sql for the
+--   11 finance tables and _dataareaid_counts_range.sql for the other 32). Many of
+--   the Section 2/3 tables are single-entity ('40' or 'dat'), so their LIST layer
+--   is a 1-entity wrapper + _edef leaf. The full 37-entity universe is kept as
+--   reference in d365.all_dataareaids() (helper 1h).
 --
 -- IDEMPOTENT: every partition is created with CREATE TABLE IF NOT EXISTS, so
 -- re-running is safe and is exactly how you extend into future years / add a
@@ -129,12 +134,17 @@ BEGIN
 END; $$;
 
 -- 1e/1f. Composite LIST(dataareaid) -> RANGE(date) helpers.
---        The PARENT is PARTITION BY LIST (dataareaid). For each code we create
---        one entity sub-partition that is itself PARTITION BY RANGE (<date>),
---        then fill it with monthly (1e) or quarterly (1f) date children + a
---        per-entity date DEFAULT. A top-level entity DEFAULT ("<tbl>_edef"),
---        also RANGE(date), absorbs every legal entity not in p_dataareaids so
---        the table is complete regardless of code-list confidence.
+--        The PARENT is PARTITION BY LIST (dataareaid). For each code in
+--        p_dataareaids we create one entity sub-partition that is itself
+--        PARTITION BY RANGE (<date>), then fill it with monthly (1e) or
+--        quarterly (1f) date children + a per-entity date DEFAULT (absorbs
+--        1900/out-of-range rows for that entity).
+--        The top-level entity DEFAULT ("<tbl>_edef") is a PLAIN LEAF table (NOT
+--        date-subpartitioned): it only ever holds the small sub-threshold tail
+--        of legal entities plus any future/unseen code, so date pruning there
+--        buys nothing and a full empty date subtree would just bloat the catalog.
+--        This keeps single-entity tables at ~= their single-level partition count
+--        while still adding the dataareaid pruning layer.
 CREATE OR REPLACE FUNCTION d365.ensure_list_monthly_partitions(
     p_parent text, p_from date, p_to date, p_datecol text, p_dataareaids text[])
 RETURNS void LANGUAGE plpgsql AS $$
@@ -153,13 +163,9 @@ BEGIN
         PERFORM d365.ensure_monthly_partitions(sch || '.' || ent, p_from, p_to);
         PERFORM d365.ensure_default_partition (sch || '.' || ent);
     END LOOP;
-    -- top-level entity DEFAULT (all other legal entities), also RANGE(date)
-    ent := tbl || '_edef';
-    EXECUTE format(
-        'CREATE TABLE IF NOT EXISTS %I.%I PARTITION OF %s DEFAULT PARTITION BY RANGE (%I)',
-        sch, ent, p_parent, p_datecol);
-    PERFORM d365.ensure_monthly_partitions(sch || '.' || ent, p_from, p_to);
-    PERFORM d365.ensure_default_partition (sch || '.' || ent);
+    -- top-level entity DEFAULT: plain leaf catch-all (tail entities + future codes)
+    EXECUTE format('CREATE TABLE IF NOT EXISTS %I.%I PARTITION OF %s DEFAULT',
+                   sch, tbl || '_edef', p_parent);
 END; $$;
 
 CREATE OR REPLACE FUNCTION d365.ensure_list_quarterly_partitions(
@@ -179,12 +185,9 @@ BEGIN
         PERFORM d365.ensure_quarterly_partitions(sch || '.' || ent, p_from, p_to);
         PERFORM d365.ensure_default_partition   (sch || '.' || ent);
     END LOOP;
-    ent := tbl || '_edef';
-    EXECUTE format(
-        'CREATE TABLE IF NOT EXISTS %I.%I PARTITION OF %s DEFAULT PARTITION BY RANGE (%I)',
-        sch, ent, p_parent, p_datecol);
-    PERFORM d365.ensure_quarterly_partitions(sch || '.' || ent, p_from, p_to);
-    PERFORM d365.ensure_default_partition   (sch || '.' || ent);
+    -- top-level entity DEFAULT: plain leaf catch-all (tail entities + future codes)
+    EXECUTE format('CREATE TABLE IF NOT EXISTS %I.%I PARTITION OF %s DEFAULT',
+                   sch, tbl || '_edef', p_parent);
 END; $$;
 
 -- 1g. Fivetran ID index. Fivetran merges each changed row into the destination
@@ -226,173 +229,186 @@ RETURNS text[] LANGUAGE sql IMMUTABLE AS $$
 $$;
 
 -- =====================================================================
--- SECTION 2 — RANGE, MONTHLY  (13 tables)
--- For each: (a) create parent with the shown PARTITION BY; (b) run the calls.
+-- SECTION 2 — COMPOSITE LIST(dataareaid) -> RANGE(date), MONTHLY  (15 tables)
+-- =====================================================================
+-- Converted from single-level RANGE 2026-07-24: dataareaid is the leading key
+-- on these too (per stakeholder direction — queries filter legal entity first).
+-- Entity lists trimmed to >=100k-row entities (verified live via
+-- _dataareaid_counts_range.sql); the tail + any future entity fall into the
+-- plain-leaf <tbl>_edef. Most of these are single-entity today ('40' operations,
+-- or 'dat' shared GL/product/system), so the LIST layer is a near-free wrapper
+-- (+1 _edef leaf) that future-proofs multi-entity growth and lets every query's
+-- dataareaid predicate prune uniformly.
+-- For each: (a) create parent with the shown PARTITION BY; (b) run the call.
 -- =====================================================================
 
--- generaljournalaccountentry | 475M / 421 GB | modifieddatetime 2020-10 ->
---   CREATE TABLE d365.generaljournalaccountentry ( ... ) PARTITION BY RANGE (modifieddatetime);
-SELECT d365.ensure_monthly_partitions('d365.generaljournalaccountentry', DATE '2020-10-01', DATE :target_end);
-SELECT d365.ensure_default_partition ('d365.generaljournalaccountentry');
+-- generaljournalaccountentry | 475M / 421 GB | modifieddatetime 2020-10 -> | 1 entity: dat (100%)
+--   CREATE TABLE d365.generaljournalaccountentry ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_monthly_partitions('d365.generaljournalaccountentry',
+       DATE '2020-10-01', DATE :target_end, 'modifieddatetime', ARRAY['dat']);
 
--- inventtrans | 495M / 365 GB | datephysical (pre-2019 incl 1900 -> DEFAULT)
---   CREATE TABLE d365.inventtrans ( ... ) PARTITION BY RANGE (datephysical);
-SELECT d365.ensure_monthly_partitions('d365.inventtrans', DATE '2019-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition ('d365.inventtrans');
+-- inventtrans | 495M / 365 GB | datephysical (pre-2019 incl 1900 -> per-entity DEFAULT) | 40 (+20 tail=652)
+--   CREATE TABLE d365.inventtrans ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_monthly_partitions('d365.inventtrans',
+       DATE '2019-01-01', DATE :target_end, 'datephysical', ARRAY['40']);
 
--- whsworkline | 528M / 435 GB | modifieddatetime | WHS live 2023-02
---   CREATE TABLE d365.whsworkline ( ... ) PARTITION BY RANGE (modifieddatetime);
-SELECT d365.ensure_monthly_partitions('d365.whsworkline', DATE '2023-02-01', DATE :target_end);
-SELECT d365.ensure_default_partition ('d365.whsworkline');
+-- whsworkline | 528M / 435 GB | modifieddatetime | WHS live 2023-02 | 1 entity: 40
+--   CREATE TABLE d365.whsworkline ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_monthly_partitions('d365.whsworkline',
+       DATE '2023-02-01', DATE :target_end, 'modifieddatetime', ARRAY['40']);
 
--- whsworktable | 239M / 133 GB | modifieddatetime | WHS 2023-02
---   CREATE TABLE d365.whsworktable ( ... ) PARTITION BY RANGE (modifieddatetime);
-SELECT d365.ensure_monthly_partitions('d365.whsworktable', DATE '2023-02-01', DATE :target_end);
-SELECT d365.ensure_default_partition ('d365.whsworktable');
+-- whsworktable | 239M / 133 GB | modifieddatetime | WHS 2023-02 | 1 entity: 40
+--   CREATE TABLE d365.whsworktable ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_monthly_partitions('d365.whsworktable',
+       DATE '2023-02-01', DATE :target_end, 'modifieddatetime', ARRAY['40']);
 
--- whsshipmenttable | 65M / 42 GB | modifieddatetime | WHS 2023-02
---   CREATE TABLE d365.whsshipmenttable ( ... ) PARTITION BY RANGE (modifieddatetime);
-SELECT d365.ensure_monthly_partitions('d365.whsshipmenttable', DATE '2023-02-01', DATE :target_end);
-SELECT d365.ensure_default_partition ('d365.whsshipmenttable');
+-- whsshipmenttable | 65M / 42 GB | modifieddatetime | WHS 2023-02 | 1 entity: 40
+--   CREATE TABLE d365.whsshipmenttable ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_monthly_partitions('d365.whsshipmenttable',
+       DATE '2023-02-01', DATE :target_end, 'modifieddatetime', ARRAY['40']);
 
--- whsloadtable | 55M / 46 GB | modifieddatetime | WHS 2023-02
---   CREATE TABLE d365.whsloadtable ( ... ) PARTITION BY RANGE (modifieddatetime);
-SELECT d365.ensure_monthly_partitions('d365.whsloadtable', DATE '2023-02-01', DATE :target_end);
-SELECT d365.ensure_default_partition ('d365.whsloadtable');
+-- whsloadtable | 55M / 46 GB | modifieddatetime | WHS 2023-02 | 1 entity: 40
+--   CREATE TABLE d365.whsloadtable ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_monthly_partitions('d365.whsloadtable',
+       DATE '2023-02-01', DATE :target_end, 'modifieddatetime', ARRAY['40']);
 
--- whsloadline | 45M / 58 GB | modifieddatetime | WHS 2023-02
---   CREATE TABLE d365.whsloadline ( ... ) PARTITION BY RANGE (modifieddatetime);
-SELECT d365.ensure_monthly_partitions('d365.whsloadline', DATE '2023-02-01', DATE :target_end);
-SELECT d365.ensure_default_partition ('d365.whsloadline');
+-- whsloadline | 45M / 58 GB | modifieddatetime | WHS 2023-02 | 1 entity: 40
+--   CREATE TABLE d365.whsloadline ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_monthly_partitions('d365.whsloadline',
+       DATE '2023-02-01', DATE :target_end, 'modifieddatetime', ARRAY['40']);
 
--- usvsalescommissionresptable | 48M / 28 GB | invoicedate 2023 ->
---   CREATE TABLE d365.usvsalescommissionresptable ( ... ) PARTITION BY RANGE (invoicedate);
-SELECT d365.ensure_monthly_partitions('d365.usvsalescommissionresptable', DATE '2023-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition ('d365.usvsalescommissionresptable');
+-- usvsalescommissionresptable | 48M / 28 GB | invoicedate 2023 -> | 1 entity: 40
+--   CREATE TABLE d365.usvsalescommissionresptable ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_monthly_partitions('d365.usvsalescommissionresptable',
+       DATE '2023-01-01', DATE :target_end, 'invoicedate', ARRAY['40']);
 
--- subledgerjournalaccountentrydistribution | 42M / 19 GB | createddatetime 2021 ->
---   CREATE TABLE d365.subledgerjournalaccountentrydistribution ( ... ) PARTITION BY RANGE (createddatetime);
-SELECT d365.ensure_monthly_partitions('d365.subledgerjournalaccountentrydistribution', DATE '2021-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition ('d365.subledgerjournalaccountentrydistribution');
+-- subledgerjournalaccountentrydistribution | 42M / 19 GB | createddatetime 2021 -> | 1 entity: dat
+--   CREATE TABLE d365.subledgerjournalaccountentrydistribution ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_monthly_partitions('d365.subledgerjournalaccountentrydistribution',
+       DATE '2021-01-01', DATE :target_end, 'createddatetime', ARRAY['dat']);
 
--- whssalesline | 34M / 20 GB | modifieddatetime 2023 ->
---   CREATE TABLE d365.whssalesline ( ... ) PARTITION BY RANGE (modifieddatetime);
-SELECT d365.ensure_monthly_partitions('d365.whssalesline', DATE '2023-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition ('d365.whssalesline');
+-- whssalesline | 34M / 20 GB | modifieddatetime 2023 -> | 1 entity: 40 (+20 tail=3)
+--   CREATE TABLE d365.whssalesline ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_monthly_partitions('d365.whssalesline',
+       DATE '2023-01-01', DATE :target_end, 'modifieddatetime', ARRAY['40']);
 
--- usvcuststatement | 31M / 19 GB | transdate 2023 ->
---   CREATE TABLE d365.usvcuststatement ( ... ) PARTITION BY RANGE (transdate);
-SELECT d365.ensure_monthly_partitions('d365.usvcuststatement', DATE '2023-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition ('d365.usvcuststatement');
+-- usvcuststatement | 31M / 19 GB | transdate 2023 -> | 1 entity: 40
+--   CREATE TABLE d365.usvcuststatement ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_monthly_partitions('d365.usvcuststatement',
+       DATE '2023-01-01', DATE :target_end, 'transdate', ARRAY['40']);
 
--- tmssalestable | 29M / 16 GB | modifieddatetime 2023 ->
---   CREATE TABLE d365.tmssalestable ( ... ) PARTITION BY RANGE (modifieddatetime);
-SELECT d365.ensure_monthly_partitions('d365.tmssalestable', DATE '2023-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition ('d365.tmssalestable');
+-- tmssalestable | 29M / 16 GB | modifieddatetime 2023 -> | 1 entity: 40
+--   CREATE TABLE d365.tmssalestable ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_monthly_partitions('d365.tmssalestable',
+       DATE '2023-01-01', DATE :target_end, 'modifieddatetime', ARRAY['40']);
 
--- usvcustinvoicejourstatement | 19M / 12 GB | invoicedate 2023 ->
---   CREATE TABLE d365.usvcustinvoicejourstatement ( ... ) PARTITION BY RANGE (invoicedate);
-SELECT d365.ensure_monthly_partitions('d365.usvcustinvoicejourstatement', DATE '2023-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition ('d365.usvcustinvoicejourstatement');
+-- usvcustinvoicejourstatement | 19M / 12 GB | invoicedate 2023 -> | 1 entity: 40
+--   CREATE TABLE d365.usvcustinvoicejourstatement ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_monthly_partitions('d365.usvcustinvoicejourstatement',
+       DATE '2023-01-01', DATE :target_end, 'invoicedate', ARRAY['40']);
 
--- custconfirmjour | 57M / 26 GB | confirmdate 2023 -> (D365 cutover)
---   CREATE TABLE d365.custconfirmjour ( ... ) PARTITION BY RANGE (confirmdate);
-SELECT d365.ensure_monthly_partitions('d365.custconfirmjour', DATE '2023-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition ('d365.custconfirmjour');
+-- custconfirmjour | 57M / 26 GB | confirmdate 2023 -> (D365 cutover) | 1 entity: 40 (+20 tail=1)
+--   CREATE TABLE d365.custconfirmjour ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_monthly_partitions('d365.custconfirmjour',
+       DATE '2023-01-01', DATE :target_end, 'confirmdate', ARRAY['40']);
 
--- sysuserlog | 10M / 6 GB | createddatetime 2018 ->
---   CREATE TABLE d365.sysuserlog ( ... ) PARTITION BY RANGE (createddatetime);
-SELECT d365.ensure_monthly_partitions('d365.sysuserlog', DATE '2018-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition ('d365.sysuserlog');
+-- sysuserlog | 10M / 6 GB | createddatetime 2018 -> | 1 entity: dat
+--   CREATE TABLE d365.sysuserlog ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_monthly_partitions('d365.sysuserlog',
+       DATE '2018-01-01', DATE :target_end, 'createddatetime', ARRAY['dat']);
 
 -- =====================================================================
--- SECTION 3 — RANGE, QUARTERLY  (17 tables)
+-- SECTION 3 — COMPOSITE LIST(dataareaid) -> RANGE(date), QUARTERLY  (17 tables)
+-- =====================================================================
+-- Same conversion as Section 2 (dataareaid leading key), quarterly date sub-level.
+-- Entity lists trimmed to >=100k-row entities (verified live 2026-07-24); tail +
+-- future entities -> plain-leaf <tbl>_edef.
 -- =====================================================================
 
--- inventdim | 328M / 139 GB | modifieddatetime | dimension rows only since 2025-06
---   CREATE TABLE d365.inventdim ( ... ) PARTITION BY RANGE (modifieddatetime);
-SELECT d365.ensure_quarterly_partitions('d365.inventdim', DATE '2025-04-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.inventdim');
+-- inventdim | 328M / 139 GB | modifieddatetime | dim rows since 2025-06 | 40 (+long 1-row tail -> _edef)
+--   CREATE TABLE d365.inventdim ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.inventdim',
+       DATE '2025-04-01', DATE :target_end, 'modifieddatetime', ARRAY['40']);
 
--- ecoresvalue | 82M / 42 GB | modifieddatetime 2023 ->
---   CREATE TABLE d365.ecoresvalue ( ... ) PARTITION BY RANGE (modifieddatetime);
-SELECT d365.ensure_quarterly_partitions('d365.ecoresvalue', DATE '2023-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.ecoresvalue');
+-- ecoresvalue | 82M / 42 GB | modifieddatetime 2023 -> | 1 entity: dat (shared product data)
+--   CREATE TABLE d365.ecoresvalue ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.ecoresvalue',
+       DATE '2023-01-01', DATE :target_end, 'modifieddatetime', ARRAY['dat']);
 
--- ecorestextvalue | 78M / 29 GB | modifieddatetime 2023 ->
---   CREATE TABLE d365.ecorestextvalue ( ... ) PARTITION BY RANGE (modifieddatetime);
-SELECT d365.ensure_quarterly_partitions('d365.ecorestextvalue', DATE '2023-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.ecorestextvalue');
+-- ecorestextvalue | 78M / 29 GB | modifieddatetime 2023 -> | 1 entity: dat (shared product data)
+--   CREATE TABLE d365.ecorestextvalue ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.ecorestextvalue',
+       DATE '2023-01-01', DATE :target_end, 'modifieddatetime', ARRAY['dat']);
 
--- taxtrans | 114M / 110 GB | transdate 2019 ->
---   CREATE TABLE d365.taxtrans ( ... ) PARTITION BY RANGE (transdate);
-SELECT d365.ensure_quarterly_partitions('d365.taxtrans', DATE '2019-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.taxtrans');
+-- taxtrans | 114M / 110 GB | transdate 2019 -> | 40,70 (tail <100k -> _edef)
+--   CREATE TABLE d365.taxtrans ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.taxtrans',
+       DATE '2019-01-01', DATE :target_end, 'transdate', ARRAY['40','70']);
 
--- custsettlement | 84M / 84 GB | transdate 2019 ->
---   CREATE TABLE d365.custsettlement ( ... ) PARTITION BY RANGE (transdate);
-SELECT d365.ensure_quarterly_partitions('d365.custsettlement', DATE '2019-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.custsettlement');
+-- custsettlement | 84M / 84 GB | transdate 2019 -> | 40,20,30 (tail <100k -> _edef)
+--   CREATE TABLE d365.custsettlement ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.custsettlement',
+       DATE '2019-01-01', DATE :target_end, 'transdate', ARRAY['40','20','30']);
 
--- taxjournaltrans | 52M / 39 GB | transdate 2019 ->
---   CREATE TABLE d365.taxjournaltrans ( ... ) PARTITION BY RANGE (transdate);
-SELECT d365.ensure_quarterly_partitions('d365.taxjournaltrans', DATE '2019-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.taxjournaltrans');
+-- taxjournaltrans | 52M / 39 GB | transdate 2019 -> | 40,70 (tail <100k -> _edef)
+--   CREATE TABLE d365.taxjournaltrans ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.taxjournaltrans',
+       DATE '2019-01-01', DATE :target_end, 'transdate', ARRAY['40','70']);
 
--- custinvoicesaleslink | 30M / 23 GB | invoicedate 2019 ->
---   CREATE TABLE d365.custinvoicesaleslink ( ... ) PARTITION BY RANGE (invoicedate);
-SELECT d365.ensure_quarterly_partitions('d365.custinvoicesaleslink', DATE '2019-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.custinvoicesaleslink');
+-- custinvoicesaleslink | 30M / 23 GB | invoicedate 2019 -> | 1 entity: 40 (tail <100k -> _edef)
+--   CREATE TABLE d365.custinvoicesaleslink ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.custinvoicesaleslink',
+       DATE '2019-01-01', DATE :target_end, 'invoicedate', ARRAY['40']);
 
--- markuptrans | 26M / 28 GB | transdate (mostly post-2019; 1900 rows -> DEFAULT)
---   CREATE TABLE d365.markuptrans ( ... ) PARTITION BY RANGE (transdate);
-SELECT d365.ensure_quarterly_partitions('d365.markuptrans', DATE '2019-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.markuptrans');
+-- markuptrans | 26M / 28 GB | transdate (post-2019; 1900 -> per-entity DEFAULT) | 40 (+20 tail=4)
+--   CREATE TABLE d365.markuptrans ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.markuptrans',
+       DATE '2019-01-01', DATE :target_end, 'transdate', ARRAY['40']);
 
--- ledgerjournaltable | 27M / 24 GB | createddatetime (some 1900 -> DEFAULT)
---   CREATE TABLE d365.ledgerjournaltable ( ... ) PARTITION BY RANGE (createddatetime);
-SELECT d365.ensure_quarterly_partitions('d365.ledgerjournaltable', DATE '2019-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.ledgerjournaltable');
+-- ledgerjournaltable | 27M / 24 GB | createddatetime (1900 -> per-entity DEFAULT) | 40,20 (tail <100k -> _edef)
+--   CREATE TABLE d365.ledgerjournaltable ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.ledgerjournaltable',
+       DATE '2019-01-01', DATE :target_end, 'createddatetime', ARRAY['40','20']);
 
--- purchlinehistory | 22M / 24 GB | deliverydate 1900-2029 (planned future + migrated past)
---   CREATE TABLE d365.purchlinehistory ( ... ) PARTITION BY RANGE (deliverydate);
-SELECT d365.ensure_quarterly_partitions('d365.purchlinehistory', DATE '2019-01-01', DATE :target_end_delivery);
-SELECT d365.ensure_default_partition   ('d365.purchlinehistory');
+-- purchlinehistory | 22M / 24 GB | deliverydate 1900-2029 (1900 -> per-entity DEFAULT) | 1 entity: 40
+--   CREATE TABLE d365.purchlinehistory ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.purchlinehistory',
+       DATE '2019-01-01', DATE :target_end_delivery, 'deliverydate', ARRAY['40']);
 
--- vendpackingsliptrans | 18M / 16 GB | accountingdate 2023 ->
---   CREATE TABLE d365.vendpackingsliptrans ( ... ) PARTITION BY RANGE (accountingdate);
-SELECT d365.ensure_quarterly_partitions('d365.vendpackingsliptrans', DATE '2023-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.vendpackingsliptrans');
+-- vendpackingsliptrans | 18M / 16 GB | accountingdate 2023 -> | 1 entity: 40 (+20 tail=129)
+--   CREATE TABLE d365.vendpackingsliptrans ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.vendpackingsliptrans',
+       DATE '2023-01-01', DATE :target_end, 'accountingdate', ARRAY['40']);
 
--- vendinvoicetrans | 18M / 21 GB | invoicedate 2023 ->
---   CREATE TABLE d365.vendinvoicetrans ( ... ) PARTITION BY RANGE (invoicedate);
-SELECT d365.ensure_quarterly_partitions('d365.vendinvoicetrans', DATE '2023-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.vendinvoicetrans');
+-- vendinvoicetrans | 18M / 21 GB | invoicedate 2023 -> | 1 entity: 40 (tail <100k, next 20=96k -> _edef)
+--   CREATE TABLE d365.vendinvoicetrans ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.vendinvoicetrans',
+       DATE '2023-01-01', DATE :target_end, 'invoicedate', ARRAY['40']);
 
--- inventtransferline | 12M / 15 GB | createddatetime 2023 ->
---   CREATE TABLE d365.inventtransferline ( ... ) PARTITION BY RANGE (createddatetime);
-SELECT d365.ensure_quarterly_partitions('d365.inventtransferline', DATE '2023-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.inventtransferline');
+-- inventtransferline | 12M / 15 GB | createddatetime 2023 -> | 1 entity: 40
+--   CREATE TABLE d365.inventtransferline ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.inventtransferline',
+       DATE '2023-01-01', DATE :target_end, 'createddatetime', ARRAY['40']);
 
--- inventtransfertable | 8.9M / 6.8 GB | createddatetime 2023 ->
---   CREATE TABLE d365.inventtransfertable ( ... ) PARTITION BY RANGE (createddatetime);
-SELECT d365.ensure_quarterly_partitions('d365.inventtransfertable', DATE '2023-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.inventtransfertable');
+-- inventtransfertable | 8.9M / 6.8 GB | createddatetime 2023 -> | 1 entity: 40
+--   CREATE TABLE d365.inventtransfertable ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.inventtransfertable',
+       DATE '2023-01-01', DATE :target_end, 'createddatetime', ARRAY['40']);
 
--- inventvaluereporttmpline | 8.7M | transdate 2023 -> (temp-line: confirm w/ API team)
---   CREATE TABLE d365.inventvaluereporttmpline ( ... ) PARTITION BY RANGE (transdate);
-SELECT d365.ensure_quarterly_partitions('d365.inventvaluereporttmpline', DATE '2023-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.inventvaluereporttmpline');
+-- inventvaluereporttmpline | 8.7M | transdate 2023 -> (temp-line: confirm w/ API team) | 1 entity: 40
+--   CREATE TABLE d365.inventvaluereporttmpline ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.inventvaluereporttmpline',
+       DATE '2023-01-01', DATE :target_end, 'transdate', ARRAY['40']);
 
--- custinteresttrans | 6.5M / 6.9 GB | transdate 2019 ->
---   CREATE TABLE d365.custinteresttrans ( ... ) PARTITION BY RANGE (transdate);
-SELECT d365.ensure_quarterly_partitions('d365.custinteresttrans', DATE '2019-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.custinteresttrans');
+-- custinteresttrans | 6.5M / 6.9 GB | transdate 2019 -> | 1 entity: 40 (tail <100k -> _edef)
+--   CREATE TABLE d365.custinteresttrans ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.custinteresttrans',
+       DATE '2019-01-01', DATE :target_end, 'transdate', ARRAY['40']);
 
--- inventjournaltrans | 6.2M | transdate 2023 ->
---   CREATE TABLE d365.inventjournaltrans ( ... ) PARTITION BY RANGE (transdate);
-SELECT d365.ensure_quarterly_partitions('d365.inventjournaltrans', DATE '2023-01-01', DATE :target_end);
-SELECT d365.ensure_default_partition   ('d365.inventjournaltrans');
+-- inventjournaltrans | 6.2M | transdate 2023 -> | 1 entity: 40 (+20 tail=17)
+--   CREATE TABLE d365.inventjournaltrans ( ... ) PARTITION BY LIST (dataareaid);
+SELECT d365.ensure_list_quarterly_partitions('d365.inventjournaltrans',
+       DATE '2023-01-01', DATE :target_end, 'transdate', ARRAY['40']);
 
 -- =====================================================================
 -- SECTION 4 — COMPOSITE  LIST(dataareaid) -> RANGE(date)   (11 tables)
@@ -401,22 +417,22 @@ SELECT d365.ensure_default_partition   ('d365.inventjournaltrans');
 -- (top-level LIST), date SECOND (RANGE sub-partition). Parent PARTITION BY
 -- is LIST (dataareaid); the helper creates each entity sub-partition as its
 -- own RANGE(date) table plus a per-entity date DEFAULT, and a top-level
--- entity DEFAULT ("<tbl>_edef") for any legal entity not listed.
+-- plain-leaf entity DEFAULT ("<tbl>_edef") for any legal entity not listed.
+-- (Same structure as Sections 2 & 3; these 11 just have more multi-entity lists.)
 --
 -- Each table's ARRAY[...] is TRIMMED to the legal entities that table actually
 -- holds with >=100k rows (verified live against Primal 2026-07-24 — see
 -- _dataareaid_counts.sql). Every other entity (the long tail of small legal
--- entities, plus any future/unseen one) lands in the table's top-level entity
--- DEFAULT <tbl>_edef, which is itself RANGE(date)-partitioned — so tail rows
--- still get date pruning, just not their own entity subtree.
+-- entities, plus any future/unseen one) lands in the table's plain-leaf entity
+-- DEFAULT <tbl>_edef. That tail is small (< a few hundred k rows total per
+-- table), so a single leaf scans fast; it is intentionally NOT date-subpartitioned.
 --
 -- Why trim: dataareaid-first multiplies date children by entity count. Using the
 -- full 37-entity universe on every table would build ~35-40k leaf partitions,
 -- mostly EMPTY subtrees for entities a given table never uses. The >=100k-row
--- cut keeps pruning for every material entity while holding the 11 tables to
--- ~3,500 partitions total. To promote a tail entity to its own partition later,
--- add its code here and re-run (idempotent) — but see the _edef caveat in
--- Section 7 if data is already loaded.
+-- cut keeps pruning for every material entity. To promote a tail entity to its
+-- own partition later, add its code here and re-run (idempotent) — but see the
+-- _edef caveat in Section 7 if data is already loaded.
 -- =====================================================================
 
 -- vendsettlement | 227M / 125 GB | transdate 2019 -> | quarterly | 16 DataAreaIds
@@ -600,20 +616,21 @@ END $$;
 -- To roll partitions into a new year: bump :target_end / :target_end_delivery
 -- at the top of this file and re-run it. IF NOT EXISTS makes every existing
 -- partition a no-op; only the new trailing months/quarters get created -- for
--- the composite tables, the new date children are created under EVERY entity
--- subtree (including <tbl>_edef) automatically.
+-- the composite tables, the new date children are created under every EXPLICIT
+-- entity subtree (<tbl>_<code>). The <tbl>_edef leaf needs no date maintenance
+-- (it is not date-subpartitioned). HASH tables need no date maintenance either.
 --
--- Production alternative: pg_partman. For single-level RANGE tables, register
--- each parent once, e.g.
+-- Production alternative: pg_partman. All date-partitioned tables here are now
+-- composite LIST(dataareaid) -> RANGE(date), so the RANGE level to automate lives
+-- on each entity subtree, not the top parent. Register each entity subtree once,
+-- e.g. for custsettlement's primary entity:
 --   SELECT partman.create_parent(
---       p_parent_table := 'd365.custsettlement',
+--       p_parent_table := 'd365.custsettlement_40',   -- the RANGE(date) sub-partition
 --       p_control      := 'transdate',
 --       p_type         := 'range',
 --       p_interval     := '3 months',
 --       p_premake      := 4);
 -- then schedule  SELECT partman.run_maintenance();  on a daily cron to
 -- auto-create ahead and (optionally) retire old partitions by retention policy.
--- For the composite LIST->RANGE tables, pg_partman manages the RANGE sub-level
--- per entity; register each entity subtree (d365.<tbl>_<code>) as its own
--- parent, or keep using this script's idempotent re-run for the date roll.
+-- Simplest path for now: keep re-running this idempotent script for the date roll.
 -- =====================================================================
