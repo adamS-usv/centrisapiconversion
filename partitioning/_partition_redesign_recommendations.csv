@@ -1,0 +1,64 @@
+table,family,old_partition_key,new_strategy,new_partition_key,hash_modulus,verdict,n_files_ref,access_evidence,note
+salestable,A SalesId,RANGE deliverydate,HASH,salesid,16,REDESIGN,58,salesid: tot=41 param=11 join=29 range=0 files=29,Entered by SALESID/CUSTACCOUNT; deliverydate never filtered. Co-partition w/ salesline for partition-wise SALESID join.
+salesline,A SalesId,RANGE shippingdaterequested,HASH,salesid,16,REDESIGN,47,salesid: tot=31 param=4 join=27 range=0 files=25,salesid j27 / itemid j29; date never filtered. Same modulus as salestable.
+custconfirmjour,A SalesId,RANGE confirmdate,HASH,salesid,8,REDESIGN,6,salesid: tot=4 param=0 join=4 range=0 files=4,Joined by SALESID+CONFIRMDOCNUM; confirmdate not filtered.
+tmssalestable,A SalesId,RANGE modifieddatetime,HASH,salesid,8,REDESIGN,2,salesid: tot=1 param=0 join=1 range=0 files=1,Joined by SALESID+DATAAREAID.
+custinvoicejour,B InvoiceId,RANGE invoicedate + LIST dai,HASH,invoiceid,16,REDESIGN*,49,invoiceid: tot=30 param=11 join=18 range=0 files=28,"DUAL pattern: point-lookup INVOICEID/SALESID (30+ files) AND date-range analytics (invoicedate p34/r40, 19 files). HASH(invoiceid)+local btree(invoicedate). Co-partition w/ custinvoicetrans."
+custinvoicetrans,B InvoiceId,RANGE invoicedate + LIST dai,HASH,invoiceid,16,REDESIGN,31,invoiceid: tot=22 param=3 join=17 range=0 files=14,invoiceid j17 / salesid j10 / itemid j22; date only as join-equality. Same modulus as custinvoicejour.
+custinvoicesaleslink,B InvoiceId,RANGE invoicedate,HASH,salesid,8,REDESIGN,2,origsalesid: tot=2 param=1 join=1 range=0 files=1,"Link table SALESID<->INVOICEID; keyed by (orig)salesid/invoiceid, not date."
+inventtransorigin,C InventTransId,HASH recid,HASH,recid,8,KEEP-HASH,8,inventtransid: tot=10 param=0 join=10 range=0 files=6,Entered by INVENTTRANSID (j10); child inventtrans joins by RECID. Keep HASH(recid) so inventtrans co-partitions; add btree(inventtransid) for the entry lookup.
+inventtrans,C InventTransId,RANGE datephysical,HASH,inventtransorigin,8,REDESIGN,8,inventtransorigin: tot=16 param=1 join=15 range=0 files=7,Joined ITRANS.INVENTTRANSORIGIN = inventtransorigin.RECID (j15); datephysical never filtered. HASH(inventtransorigin) co-partitions w/ inventtransorigin(recid).
+inventtransoriginsalesline,C InventTransId,HASH recid,HASH,recid,8,KEEP-HASH,1,,Joined by FK; keep HASH(recid).
+whssalesline,C InventTransId,RANGE modifieddatetime,HASH,inventtransid,8,REDESIGN,7,inventtransid: tot=6 param=0 join=6 range=0 files=6,Joined by INVENTTRANSID (j6)+DATAAREAID; modifieddatetime selected but not filtered.
+inventsum,C InventTransId,HASH recid,HASH,recid,16,KEEP-HASH,1,,"Entered by ITEMID+dims, never RECID. HASH(recid) = parallel scan only; consider HASH(itemid)."
+markuptrans,D TransRecId,RANGE transdate + LIST dai,HASH,transrecid,16,REDESIGN,26,transrecid: tot=83 param=15 join=68 range=0 files=19,transrecid j68 -> salesline.RECID / custinvoicetrans.RECID; transdate never filtered. HASH(transrecid).
+purchline,E PurchId,RANGE deliverydate + LIST dai,HASH,purchid,8,REDESIGN,6,purchid: tot=4 param=3 join=1 range=0 files=4,WHERE PURCHID=@p AND DATAAREAID=@le; deliverydate never filtered.
+purchlinehistory,E PurchId,RANGE deliverydate,HASH,purchid,4,REDESIGN,1,,No active consumer; align to purchline family by PURCHID.
+vendtrans,F Vendor,RANGE transdate + LIST dai,HASH,accountnum,8,REDESIGN,3,accountnum: tot=2 param=1 join=1 range=0 files=1,WHERE DATAAREAID+ACCOUNTNUM+INVOICE; transdate absent. HASH(accountnum)+btree(invoice).
+vendsettlement,F Vendor,RANGE transdate + LIST dai,HASH,accountnum,8,DEFER,1,,"No active consumer (Ventus retired). HASH(accountnum) to match vendtrans, or defer."
+vendinvoicejour,F Vendor,RANGE invoicedate + LIST dai,HASH,invoiceaccount,4,DEFER,1,,No active consumer; future vendor Invoice API -> INVOICEACCOUNT/INVOICEID.
+vendinvoicetrans,F Vendor,RANGE invoicedate,HASH,invoiceid,4,DEFER,1,,No active consumer.
+vendpackingsliptrans,F Vendor,RANGE accountingdate,HASH,recid,4,DEFER,1,,No active consumer.
+vendinvoiceinfoline,F Vendor,HASH recid,HASH,recid,4,KEEP-HASH,1,,No active consumer; keep HASH(recid).
+custtrans,G CustFinance,RANGE modifieddatetime + LIST dai,HASH,accountnum,8,REDESIGN,12,accountnum: tot=9 param=1 join=8 range=0 files=4,COMPASSValidateCustomerInvoice: DATAAREAID+ACCOUNTNUM+INVOICE; recid j8 for settlement joins. HASH(accountnum).
+custsettlement,G CustFinance,RANGE transdate,HASH,transrecid,8,REDESIGN,6,transrecid: tot=2 param=0 join=2 range=0 files=2,Joined by TRANSRECID/OFFSETRECID -> custtrans.RECID; transdate not filtered.
+custinteresttrans,G CustFinance,RANGE transdate,HASH,recid,4,DEFER,1,,No active consumer.
+usvsspprogramcustomer,H Program,HASH recid,HASH,invoiceaccount,4,REDESIGN,4,custaccount: tot=5 param=3 join=2 range=0 files=3,"Filtered by CUSTACCOUNT/INVOICEACCOUNT/PROGRAMID, never RECID."
+usvsspprogramproducts,H Program,HASH recid,HASH,invoiceaccount,4,REDESIGN,4,,"Joined by INVOICEACCOUNT/PROGRAMID/ITEMID, never RECID."
+usvexclusionprogramcustomerproducts,H Program,HASH recid,HASH,invoiceaccount,8,REDESIGN,3,invoiceaccount: tot=1 param=1 join=0 range=0 files=1,Filtered by INVOICEACCOUNT; never RECID. 73GB - key alignment matters.
+generaljournalentry,I GL,RANGE accountingdate + LIST dai,HASH,recid,8,REDESIGN,5,recid: tot=2 param=0 join=2 range=0 files=1,Child gjae joins by RECID; entered by SUBLEDGERVOUCHER / Ledger.Name; accountingdate absent.
+generaljournalaccountentry,I GL,RANGE modifieddatetime,HASH,generaljournalentry,8,REDESIGN,4,generaljournalentry: tot=2 param=0 join=2 range=0 files=2,Joined gjae.GENERALJOURNALENTRY = gje.RECID (j2); modifieddatetime never filtered. Co-partition w/ generaljournalentry.
+subledgerjournalaccountentrydistribution,I GL,RANGE createddatetime,HASH,recid,4,DEFER,1,,No active consumer.
+ledgertransvoucherlink,I GL,RANGE transdate + LIST dai,HASH,voucher,4,DEFER,1,,No active consumer; voucher-lookup path (rudi GetVoucherPostedDate) -> VOUCHER.
+ledgerjournaltable,I GL,RANGE createddatetime,HASH,recid,4,REDESIGN,3,posteddatetime: tot=3 param=3 join=0 range=3 files=2,Filtered by JOURNALNAME + POSTEDDATETIME range (p3/r3). Mild date use; HASH(recid) or keep small RANGE.
+ledgerentryjournal,I GL,HASH recid,HASH,recid,8,KEEP-HASH,1,,No active consumer; keep HASH(recid).
+taxtrans,I GL,RANGE transdate + LIST dai,HASH,sourcerecid,8,REDESIGN,6,sourcerecid: tot=10 param=0 join=6 range=0 files=5,Joined by SOURCERECID (j6)/VOUCHER; transdate never filtered.
+taxjournaltrans,I GL,RANGE transdate,HASH,recid,4,DEFER,1,,No active consumer.
+inventdim,K Ref,RANGE modifieddatetime,HASH,inventdimid,8,REDESIGN,2,,Universally joined by INVENTDIMID; date never filtered.
+ecoresvalue,K Ref,RANGE modifieddatetime,HASH,recid,8,REDESIGN,2,recid: tot=2 param=0 join=2 range=0 files=1,Joined by RECID via v_ecoresvalue; date never filtered.
+ecorestextvalue,K Ref,RANGE modifieddatetime,HASH,recid,8,REDESIGN,2,,Joined by RECID; date never filtered.
+ecoresattributevalue,K Ref,HASH recid,HASH,recid,8,KEEP-HASH,3,value: tot=5 param=0 join=5 range=0 files=1,Filtered by ATTRIBUTE/VALUE; keep HASH(recid).
+ecoresinstancevalue,K Ref,HASH recid,HASH,recid,8,KEEP-HASH,1,,Joined by PRODUCT/ITEMID; keep HASH(recid).
+inventtransferline,K Ref,RANGE createddatetime,HASH,transferid,4,REDESIGN,1,,WHERE TRANSFERID=@t AND DATAAREAID; createddatetime not filtered.
+inventtransfertable,K Ref,RANGE createddatetime,HASH,transferid,4,REDESIGN,2,transferid: tot=1 param=0 join=1 range=0 files=1,WHERE TRANSFERID=@t AND DATAAREAID; createddatetime not filtered.
+inventjournaltrans,K Ref,RANGE transdate,HASH,recid,4,DEFER,1,,No active consumer.
+inventvaluereporttmpline,K Ref,RANGE transdate,HASH,recid,4,DEFER,1,,Temp-line table; consider no partitioning.
+reqitemtable,K Ref,HASH recid,HASH,recid,4,KEEP-HASH,1,,No active consumer; keep HASH(recid).
+whsloadtable,J WHS-date,RANGE modifieddatetime,KEEP-RANGE,modifieddatetime,,KEEP-RANGE,2,modifieddatetime: tot=2 param=2 join=0 range=2 files=1,sp856 EDI: WHERE modifieddatetime >= @LoadModifiedDate AND < @LoadModifiedLTDate. Genuine date-window - keep RANGE.
+whsloadline,J WHS-date,RANGE modifieddatetime,KEEP-RANGE,modifieddatetime,,KEEP-RANGE,3,modifieddatetime: tot=3 param=3 join=0 range=3 files=1,sp856 filters wll.modifieddatetime >= @LoadModifiedDate. Keep RANGE.
+whsworkline,J WHS-date,RANGE modifieddatetime,KEEP-RANGE,modifieddatetime,,DEFER,1,,No active consumer in current repo (was sp856/WaveId in disabled procs). Keep RANGE or defer.
+whsworktable,J WHS-date,RANGE modifieddatetime,KEEP-RANGE,modifieddatetime,,DEFER,1,,No active consumer in current repo. Keep RANGE or defer.
+whsshipmenttable,J WHS-date,RANGE modifieddatetime,KEEP-RANGE,modifieddatetime,,DEFER,1,,No active consumer. Keep RANGE (future Warehouse API date filter).
+whsworklinecyclecount,J WHS-date,HASH recid,HASH,recid,4,KEEP-HASH,1,,No active consumer; keep HASH(recid).
+usvcuststatement,L Statement,RANGE transdate,HASH,custaccount,8,DEFER,3,,View -> /finance/customers/{acct}/statement; API path-keyed by account. HASH(custaccount) or keep date+btree.
+usvcustinvoicejourstatement,L Statement,RANGE invoicedate,HASH,invoiceaccount,4,DEFER,1,,Statement API path-keyed by account. HASH(invoiceaccount) or keep date.
+usvsalescommissionresptable,L Statement,RANGE invoicedate,HASH,invoiceaccount,8,DEFER,1,,View -> Vendor commission API; invoicedate not filtered by consumers.
+sysuserlog,M System,RANGE createddatetime,KEEP-RANGE,createddatetime,,DEFER,1,,"System log, no IDB consumer. Keep RANGE for retention rolloff, or defer."
+usvecoresprodtiresattributes,K Ref,HASH recid,HASH,recid,4,KEEP-HASH,1,,Product-attribute catalog; no IDB consumer.
+usvecoresprodpartsattributes,K Ref,HASH recid,HASH,recid,4,KEEP-HASH,1,,Product-attribute catalog; no IDB consumer.
+usvecoresprodtubesattributes,K Ref,HASH recid,HASH,recid,4,KEEP-HASH,1,,Product-attribute catalog; no IDB consumer.
+usvecoresprodlubeschemicalattributes,K Ref,HASH recid,HASH,recid,4,KEEP-HASH,1,,Product-attribute catalog; no IDB consumer.
+usvecoresprodtiresaccessoriesattributes,K Ref,HASH recid,HASH,recid,4,KEEP-HASH,1,,Product-attribute catalog; no IDB consumer.
+usvecoresprodmicsitemsattributes,K Ref,HASH recid,HASH,recid,4,KEEP-HASH,1,,Product-attribute catalog; no IDB consumer.
+usvecoresprodexhuastattributes,K Ref,HASH recid,HASH,recid,4,KEEP-HASH,1,,Product-attribute catalog; no IDB consumer.
+usvecoresprodtiresattributesext,K Ref,HASH recid,HASH,recid,4,KEEP-HASH,1,,Product-attribute catalog; no IDB consumer.

@@ -1,0 +1,64 @@
+table,n_files_referencing,total_predicates,"ranked_access_columns(col:total[p=param,j=join,r=range])"
+custconfirmjour,6,10,"salesid:4[p0,j4,r0] | confirmdocnum:4[p0,j4,r0] | confirmdate:2[p2,j0,r2]"
+custinteresttrans,1,0,
+custinvoicejour,49,229,"salesid:42[p2,j39,r0] | invoicedate:41[p34,j4,r40] | orderaccount:30[p5,j24,r0] | invoiceid:30[p11,j18,r0] | dataareaid:21[p1,j12,r0] | invoiceaccount:18[p8,j6,r0] | recid:8[p3,j1,r0] | returnreasoncodeid:6[p0,j5,r0]"
+custinvoicesaleslink,2,3,"origsalesid:2[p1,j1,r0] | dataareaid:1[p0,j1,r0]"
+custinvoicetrans,31,114,"itemid:24[p2,j22,r0] | invoiceid:22[p3,j17,r0] | dataareaid:19[p11,j7,r0] | linenum:14[p0,j14,r0] | salesid:10[p0,j10,r0] | recid:8[p5,j3,r0] | inventtransid:4[p0,j4,r0] | invoicedate:4[p0,j4,r0]"
+custsettlement,6,6,"transrecid:2[p0,j2,r0] | offsetrecid:1[p0,j1,r0] | partition:1[p1,j0,r0] | dataareaid:1[p0,j0,r0] | closeddate:1[p0,j0,r0]"
+custtrans,12,136,"dataareaid:34[p1,j28,r0] | invoice:28[p1,j4,r0] | partition:24[p3,j21,r0] | transtype:14[p0,j4,r0] | accountnum:9[p1,j8,r0] | recid:8[p0,j8,r0] | voucher:5[p0,j3,r0] | mcrpaymorderid:4[p0,j4,r0]"
+ecoresattributevalue,3,6,"value:5[p0,j5,r0] | attribute:1[p0,j1,r0]"
+ecoresinstancevalue,1,0,
+ecorestextvalue,2,0,
+ecoresvalue,2,4,"recid:2[p0,j2,r0] | instancerelationtype:2[p0,j0,r0]"
+generaljournalaccountentry,4,8,"postingtype:4[p0,j0,r0] | generaljournalentry:2[p0,j2,r0] | ledgeraccount:1[p1,j0,r0] | ledgerdimension:1[p0,j1,r0]"
+generaljournalentry,5,11,"subledgervoucher:3[p1,j2,r0] | subledgervoucherdataareaid:3[p1,j2,r0] | recid:2[p0,j2,r0] | ledger:1[p0,j1,r0] | fiscalcalendarperiod:1[p0,j1,r0] | postinglayer:1[p0,j0,r0]"
+inventdim,2,0,
+inventjournaltrans,1,0,
+inventsum,1,0,
+inventtrans,8,39,"statusissue:18[p0,j0,r5] | inventtransorigin:16[p1,j15,r0] | qty:1[p0,j0,r1] | packingslipreturned:1[p0,j0,r0] | returninventtransorigin:1[p0,j0,r0] | recid:1[p0,j1,r0] | invoiceid:1[p0,j1,r0]"
+inventtransferline,1,0,
+inventtransfertable,2,1,"transferid:1[p0,j1,r0]"
+inventtransorigin,8,10,"inventtransid:10[p0,j10,r0]"
+inventtransoriginsalesline,1,0,
+inventvaluereporttmpline,1,0,
+ledgerentryjournal,1,0,
+ledgerjournaltable,3,11,"journalname:3[p0,j0,r0] | posteddatetime:3[p3,j0,r3] | dataareaid:2[p0,j0,r0] | posted:2[p0,j0,r0] | journaltype:1[p0,j0,r0]"
+ledgertransvoucherlink,1,0,
+markuptrans,26,251,"transrecid:83[p15,j68,r0] | markupcode:76[p0,j3,r0] | transtableid:58[p12,j0,r0] | markupcategory:18[p0,j18,r0] | dataareaid:11[p5,j6,r0] | mcrsavedrecid:3[p0,j3,r0] | calculatedamount:2[p0,j0,r0]"
+purchline,6,15,"purchid:4[p3,j1,r0] | itemid:2[p1,j1,r0] | purchstatus:2[p0,j0,r0] | dataareaid:2[p1,j0,r0] | vendaccount:2[p1,j1,r0] | inventdimid:1[p0,j1,r0] | isdeleted:1[p0,j0,r0] | purchqty:1[p0,j0,r0]"
+purchlinehistory,1,0,
+reqitemtable,1,0,
+salesline,47,131,"salesid:31[p4,j27,r0] | itemid:30[p1,j29,r0] | salestype:11[p11,j0,r0] | salesstatus:10[p5,j0,r0] | inventtransid:8[p0,j8,r0] | salesqty:8[p0,j0,r8] | dataareaid:7[p5,j2,r0] | linenum:6[p1,j5,r0]"
+salestable,58,230,"salestype:61[p38,j0,r0] | salesid:41[p11,j29,r0] | salesstatus:23[p16,j0,r0] | invoiceaccount:22[p13,j6,r0] | inventlocationid:18[p18,j0,r0] | custaccount:17[p8,j8,r0] | usvcreatedbyais:10[p0,j0,r0] | usvoriginatingaccount:9[p0,j9,r0]"
+subledgerjournalaccountentrydistribution,1,0,
+sysuserlog,1,0,
+taxjournaltrans,1,0,
+taxtrans,6,22,"sourcerecid:10[p0,j6,r0] | voucher:6[p0,j6,r0] | taxcode:3[p0,j0,r0] | dataareaid:2[p2,j0,r0] | sourcetableid:1[p1,j0,r0]"
+tmssalestable,2,2,"salesid:1[p0,j1,r0] | dataareaid:1[p0,j1,r0]"
+usvcustinvoicejourstatement,1,0,
+usvcuststatement,3,0,
+usvecoresprodexhuastattributes,1,0,
+usvecoresprodlubeschemicalattributes,1,0,
+usvecoresprodmicsitemsattributes,1,0,
+usvecoresprodpartsattributes,1,0,
+usvecoresprodtiresaccessoriesattributes,1,0,
+usvecoresprodtiresattributes,1,0,
+usvecoresprodtiresattributesext,1,0,
+usvecoresprodtubesattributes,1,0,
+usvexclusionprogramcustomerproducts,3,4,"type:1[p0,j0,r0] | programid:1[p0,j1,r0] | stateid:1[p0,j1,r0] | invoiceaccount:1[p1,j0,r0]"
+usvsalescommissionresptable,1,0,
+usvsspprogramcustomer,4,13,"custaccount:5[p3,j2,r0] | programid:4[p0,j4,r0] | invoiceaccount:3[p0,j3,r0] | dataareaid:1[p0,j1,r0]"
+usvsspprogramproducts,4,4,"itemid:2[p1,j1,r0] | programid:1[p0,j1,r0] | dataareaid:1[p0,j1,r0]"
+vendinvoiceinfoline,1,0,
+vendinvoicejour,1,0,
+vendinvoicetrans,1,0,
+vendpackingsliptrans,1,0,
+vendsettlement,1,0,
+vendtrans,3,7,"accountnum:2[p1,j1,r0] | dataareaid:2[p1,j1,r0] | transtype:2[p0,j0,r0] | invoice:1[p1,j0,r0]"
+whsloadline,3,6,"modifieddatetime:3[p3,j0,r3] | ordernum:1[p1,j0,r0] | loadid:1[p0,j1,r0] | inventtransid:1[p0,j1,r0]"
+whsloadtable,2,2,"modifieddatetime:2[p2,j0,r2]"
+whssalesline,7,13,"inventtransid:6[p0,j6,r0] | dataareaid:3[p0,j3,r0] | releasedqty:3[p0,j3,r0] | packingqty:1[p0,j0,r0]"
+whsshipmenttable,1,0,
+whsworkline,1,0,
+whsworklinecyclecount,1,0,
+whsworktable,1,0,
