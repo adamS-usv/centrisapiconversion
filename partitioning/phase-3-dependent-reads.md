@@ -2,14 +2,16 @@
 
 **Scope:** Program, Delivery, PurchaseOrder, Invoice, TransferOrder. Heaviest concentration of date-range query workloads.
 
-**Source:** profiled from `d365.*` schema on Azure SQL `d365a1prdsynlinkusvprod2sql01.database.windows.net / primal` on 2026-06-04. Row counts from `sys.dm_db_partition_stats`; date column min/max from TABLESAMPLE.
+**Source:** profiled from `d365.*` schema on Azure SQL `d365a1prdsynlinkusvprod2sql01.database.windows.net / primal` on 2026-06-04. Row counts from `sys.dm_db_partition_stats`; date column min/max from TABLESAMPLE. Partition *type* synced to composite DDL 2026-08-10.
 
 **Summary:**
 - Tables in scope: 59
-- Partitioning recommended: 29 (15 RANGE, 7 RANGE+LIST, 7 HASH)
+- Partitioning recommended: 29 (22 LIST+RANGE, 7 HASH)
 - No partitioning needed: 30
 
 > **⚠️ Query-fit caveat:** These recommendations are profiled from **data shape**, not query access patterns. Per [`sproc-partition-fit-analysis.md`](sproc-partition-fit-analysis.md), current sprocs filter these tables by **business key** (InvoiceId/SalesId/RecId/AccountNum), not by the partition date column; `DataAreaId` LIST pruning fires only where `legalEntity`/`DataAreaId` is actually filtered (it is commented out in several `ais.*` procs). The date/RANGE design pays off for the **future date-range search APIs**, not legacy point lookups. Validate per table before authoring DDL.
+
+> **Composite rule (2026-07-24):** Every date-partitioned table is **`LIST(dataareaid) → RANGE(<date>)`** — legal entity first, date second — matching [`create-partitions.sql`](create-partitions.sql) / [`MASTER_PARTITION_LIST.md`](MASTER_PARTITION_LIST.md). HASH tables (no usable date) stay `HASH(recid)`.
 
 ## Tables to partition
 
@@ -17,35 +19,35 @@ Sorted by size (largest first).
 
 | Table | Rows | Size (MB) | Partition column | Type | Interval | DataAreaIds | Rationale |
 |---|---:|---:|---|---|---|---:|---|
-| `d365.inventtrans` | 495226162 | 373685.94 | `datephysical` | RANGE | monthly | 1 | 495M rows / 373 GB; datephysical 1900-2026 (default partition for migrated 1900 rows + monthly post-2019) |
+| `d365.inventtrans` | 495226162 | 373685.94 | `datephysical` | LIST+RANGE | LIST(DataAreaId) + monthly | 1 | 495M rows / 373 GB; datephysical 1900-2026 (default partition for migrated 1900 rows + monthly post-2019); composite LIST(dataareaid) → RANGE(date) |
 | `d365.inventsum` | 399078046 | 329429.82 | `RecId` | HASH | 16 partitions | 1 | 399M rows / 329 GB; inventory snapshot, no business date; HASH for parallel reads |
-| `d365.vendtrans` | 179939436 | 169215.48 | `transdate` | RANGE+LIST | quarterly + LIST(DataAreaId) | 8 | 179M rows / 169 GB; transdate 2019-2026; 8 DataAreaIds |
-| `d365.custinvoicetrans` | 103941126 | 138014.41 | `invoicedate` | RANGE+LIST | monthly + LIST(DataAreaId) | 5 | 103M rows / 138 GB; invoicedate 2019-2026; 5 DataAreaIds - invoice queries always filter both |
+| `d365.vendtrans` | 179939436 | 169215.48 | `transdate` | LIST+RANGE | LIST(DataAreaId) + quarterly | 8 | 179M rows / 169 GB; transdate 2019-2026; 8 DataAreaIds |
+| `d365.custinvoicetrans` | 103941126 | 138014.41 | `invoicedate` | LIST+RANGE | LIST(DataAreaId) + monthly | 5 | 103M rows / 138 GB; invoicedate 2019-2026; 5 DataAreaIds - invoice queries always filter both |
 | `d365.inventtransorigin` | 238538449 | 132268.30 | `RecId` | HASH | 8 partitions | 1 | 238M rows / 132 GB; both audit columns 1900-01-01; _fivetran_synced only 6 weeks; HASH by RecId |
-| `d365.custtrans` | 134756602 | 126006.80 | `transdate` | RANGE+LIST | monthly + LIST(DataAreaId) | 8 | 134M rows / 126 GB; transdate 2019-2026; 8 DataAreaIds; heavy date-range query pattern |
-| `d365.custinvoicejour` | 90748712 | 125455.43 | `invoicedate` | RANGE+LIST | monthly + LIST(DataAreaId) | 6 | 90M rows / 125 GB; invoicedate 2019-2026; 6 DataAreaIds; primary table for Invoice API |
-| `d365.vendsettlement` | 227009580 | 125283.79 | `transdate` | RANGE+LIST | quarterly + LIST(DataAreaId) | 16 | 227M rows / 125 GB; transdate 2019-2026; 16 DataAreaIds - composite partition for legal-entity isolation |
-| `d365.taxtrans` | 114310054 | 110083.88 | `transdate` | RANGE | quarterly | 5 | 114M rows / 110 GB; transdate 2019-2026; 5 DataAreaIds |
-| `d365.custsettlement` | 84237485 | 84485.11 | `transdate` | RANGE | quarterly | 7 | 84M rows / 84 GB; transdate 2019-2026; 7 DataAreaIds |
-| `d365.vendinvoicejour` | 51546512 | 62295.68 | `invoicedate` | RANGE+LIST | monthly + LIST(DataAreaId) | 17 | 51M rows / 62 GB; 17 DataAreaIds - heaviest multi-entity table |
-| `d365.taxjournaltrans` | 52095178 | 39325.65 | `transdate` | RANGE | quarterly | 4 | 52M rows / 39 GB; transdate 2019-2026; 4 DataAreaIds |
-| `d365.purchline` | 20041706 | 34061.03 | `deliverydate` | RANGE+LIST | quarterly + LIST(DataAreaId) | 1 | 20M rows / 34 GB; deliverydate 1900-2029; PO line queries filter delivery window |
-| `d365.markuptrans` | 26929460 | 28769.93 | `transdate` | RANGE | quarterly | 1 | 26M rows / 28 GB; transdate mostly post-2019 (some 1900 migrated rows -> default partition) |
-| `d365.custconfirmjour` | 57136818 | 26550.23 | `confirmdate` | RANGE | monthly | 1 | 57M rows / 26 GB; confirmdate 2023-2026 (D365 cutover); single DataAreaId |
+| `d365.custtrans` | 134756602 | 126006.80 | `modifieddatetime` | LIST+RANGE | LIST(DataAreaId) + monthly | 8 | 134M rows / 126 GB; modifieddatetime 2019-02+ verified clean (0 x 1900 rows); 3 kept DataAreaIds (40,20,30); LIST(dataareaid) → RANGE(modifieddatetime) monthly |
+| `d365.custinvoicejour` | 90748712 | 125455.43 | `invoicedate` | LIST+RANGE | LIST(DataAreaId) + monthly | 6 | 90M rows / 125 GB; invoicedate 2019-2026; 6 DataAreaIds; primary table for Invoice API |
+| `d365.vendsettlement` | 227009580 | 125283.79 | `transdate` | LIST+RANGE | LIST(DataAreaId) + quarterly | 16 | 227M rows / 125 GB; transdate 2019-2026; 16 DataAreaIds - composite partition for legal-entity isolation |
+| `d365.taxtrans` | 114310054 | 110083.88 | `transdate` | LIST+RANGE | LIST(DataAreaId) + quarterly | 5 | 114M rows / 110 GB; transdate 2019-2026; 5 DataAreaIds; composite LIST(dataareaid) → RANGE(date) |
+| `d365.custsettlement` | 84237485 | 84485.11 | `transdate` | LIST+RANGE | LIST(DataAreaId) + quarterly | 7 | 84M rows / 84 GB; transdate 2019-2026; 7 DataAreaIds; composite LIST(dataareaid) → RANGE(date) |
+| `d365.vendinvoicejour` | 51546512 | 62295.68 | `invoicedate` | LIST+RANGE | LIST(DataAreaId) + monthly | 17 | 51M rows / 62 GB; 17 DataAreaIds - heaviest multi-entity table |
+| `d365.taxjournaltrans` | 52095178 | 39325.65 | `transdate` | LIST+RANGE | LIST(DataAreaId) + quarterly | 4 | 52M rows / 39 GB; transdate 2019-2026; 4 DataAreaIds; composite LIST(dataareaid) → RANGE(date) |
+| `d365.purchline` | 20041706 | 34061.03 | `deliverydate` | LIST+RANGE | LIST(DataAreaId) + quarterly | 1 | 20M rows / 34 GB; deliverydate 1900-2029; PO line queries filter delivery window |
+| `d365.markuptrans` | 26929460 | 28769.93 | `transdate` | LIST+RANGE | LIST(DataAreaId) + quarterly | 1 | 26M rows / 28 GB; transdate mostly post-2019 (some 1900 migrated rows -> default partition); composite LIST(dataareaid) → RANGE(date) |
+| `d365.custconfirmjour` | 57136818 | 26550.23 | `confirmdate` | LIST+RANGE | LIST(DataAreaId) + monthly | 1 | 57M rows / 26 GB; confirmdate 2023-2026 (D365 cutover); single DataAreaId; composite LIST(dataareaid) → RANGE(date) |
 | `d365.reqitemtable` | 24638073 | 25787.24 | `RecId` | HASH | 4 partitions | 1 | 24M rows; audit cols 1900-01-01; no business date |
-| `d365.purchlinehistory` | 22494194 | 24801.41 | `deliverydate` | RANGE | quarterly | 1 | 22M rows / 24 GB; deliverydate spans 1900-2029 (planned future + migrated past) - quarterly with default partition |
-| `d365.custinvoicesaleslink` | 30252727 | 23917.43 | `invoicedate` | RANGE | quarterly | 5 | 30M rows / 23 GB; invoicedate 2019-2026; 5 DataAreaIds |
-| `d365.vendinvoicetrans` | 18431214 | 21831.23 | `invoicedate` | RANGE | quarterly | 2 | 18M rows / 21 GB; invoicedate 2023-2026; 2 DataAreaIds |
-| `d365.vendpackingsliptrans` | 18454338 | 16352.75 | `accountingdate` | RANGE | quarterly | 2 | 18M rows / 16 GB; accountingdate 2023-2026 |
+| `d365.purchlinehistory` | 22494194 | 24801.41 | `deliverydate` | LIST+RANGE | LIST(DataAreaId) + quarterly | 1 | 22M rows / 24 GB; deliverydate spans 1900-2029 (planned future + migrated past) - quarterly with default partition; composite LIST(dataareaid) → RANGE(date) |
+| `d365.custinvoicesaleslink` | 30252727 | 23917.43 | `invoicedate` | LIST+RANGE | LIST(DataAreaId) + quarterly | 5 | 30M rows / 23 GB; invoicedate 2019-2026; 5 DataAreaIds; composite LIST(dataareaid) → RANGE(date) |
+| `d365.vendinvoicetrans` | 18431214 | 21831.23 | `invoicedate` | LIST+RANGE | LIST(DataAreaId) + quarterly | 2 | 18M rows / 21 GB; invoicedate 2023-2026; 2 DataAreaIds; composite LIST(dataareaid) → RANGE(date) |
+| `d365.vendpackingsliptrans` | 18454338 | 16352.75 | `accountingdate` | LIST+RANGE | LIST(DataAreaId) + quarterly | 2 | 18M rows / 16 GB; accountingdate 2023-2026; composite LIST(dataareaid) → RANGE(date) |
 | `d365.inventtransoriginsalesline` | 36614473 | 16186.60 | `RecId` | HASH | 8 partitions | 1 | 36M rows; audit cols 1900-01-01; HASH by RecId |
-| `d365.inventtransferline` | 12815994 | 15238.14 | `createddatetime` | RANGE | quarterly | 1 | 12M rows / 15 GB; createddatetime 2023-2026 |
-| `d365.custinteresttrans` | 6535250 | 6948.60 | `transdate` | RANGE | quarterly | 3 | 6.5M rows / 6.9 GB; transdate 2019-2026; 3 DataAreaIds |
-| `d365.inventtransfertable` | 8951000 | 6883.45 | `createddatetime` | RANGE | quarterly | 1 | 8.9M rows / 6.8 GB; createddatetime 2023-2026 |
+| `d365.inventtransferline` | 12815994 | 15238.14 | `createddatetime` | LIST+RANGE | LIST(DataAreaId) + quarterly | 1 | 12M rows / 15 GB; createddatetime 2023-2026; composite LIST(dataareaid) → RANGE(date) |
+| `d365.custinteresttrans` | 6535250 | 6948.60 | `transdate` | LIST+RANGE | LIST(DataAreaId) + quarterly | 3 | 6.5M rows / 6.9 GB; transdate 2019-2026; 3 DataAreaIds; composite LIST(dataareaid) → RANGE(date) |
+| `d365.inventtransfertable` | 8951000 | 6883.45 | `createddatetime` | LIST+RANGE | LIST(DataAreaId) + quarterly | 1 | 8.9M rows / 6.8 GB; createddatetime 2023-2026; composite LIST(dataareaid) → RANGE(date) |
 | `d365.vendinvoiceinfoline` | 5529502 | 6210.31 | `RecId` | HASH | 4 partitions | 2 | 5.5M rows; audit cols 1900-01-01 |
-| `d365.inventvaluereporttmpline` | 8706506 | 5738.52 | `transdate` | RANGE | quarterly | 2 | 8.7M rows; transdate 2023-2026; temp-line table - consider whether to partition at all (TBD with API team) |
+| `d365.inventvaluereporttmpline` | 8706506 | 5738.52 | `transdate` | LIST+RANGE | LIST(DataAreaId) + quarterly | 2 | 8.7M rows; transdate 2023-2026; temp-line table - consider whether to partition at all (TBD with API team); composite LIST(dataareaid) → RANGE(date) |
 | `d365.usvsspprogramcustomer` | 9382436 | 5694.10 | `RecId` | HASH | 4 partitions | 1 | 9M rows; both audit cols 1900-01-01 |
 | `d365.usvsspprogramproducts` | 9235126 | 5549.79 | `RecId` | HASH | 4 partitions | 1 | 9M rows; both audit cols 1900-01-01 |
-| `d365.inventjournaltrans` | 6220930 | 4954.77 | `transdate` | RANGE | quarterly | 2 | 6.2M rows; transdate 2023-2026 |
+| `d365.inventjournaltrans` | 6220930 | 4954.77 | `transdate` | LIST+RANGE | LIST(DataAreaId) + quarterly | 2 | 6.2M rows; transdate 2023-2026; composite LIST(dataareaid) → RANGE(date) |
 
 ## No partitioning needed (30 tables)
 
@@ -77,13 +79,13 @@ These tables are small enough (under 10M rows AND under 5 GB) or zero-row that P
 | `d365.purchparameters` | 74 | 0.21 |
 | `d365.markuptable` | 48 | 0.20 |
 | `d365.idttaxlogparameters` | 24 | 0.07 |
-| `d365.vduplicateprograms` | 0 | 0 |
+| `d365.vprogramswithnoitems` | 0 | 0.00 |
+| `d365.vprogramtableswithzerorecords` | 0 | 0.00 |
+| `d365.usvprogramproductstableentity` | 0 | 0.00 |
+| `d365.usvprogramcustprodexclusiontableentity` | 0 | 0.00 |
 | `d365.taxgstreliefgroupheading_my` | 0 | 0.00 |
-| `d365.usvprogramtableentity` | 0 | 0 |
-| `d365.paymenttermentity` | 0 | 0 |
-| `d365.vprogramtableswithzerorecords` | 0 | 0 |
-| `d365.vprogramswithnoitems` | 0 | 0 |
-| `d365.usvprogramcustprodexclusiontableentity` | 0 | 0 |
-| `d365.usvprogramproductstableentity` | 0 | 0 |
+| `d365.vduplicateprograms` | 0 | 0.00 |
+| `d365.paymenttermentity` | 0 | 0.00 |
+| `d365.usvprogramtableentity` | 0 | 0.00 |
 
 </details>

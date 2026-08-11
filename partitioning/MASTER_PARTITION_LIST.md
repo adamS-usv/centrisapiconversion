@@ -1,6 +1,7 @@
 # Master Partition List — D365 → AlloyDB (Project Atlas Phase 2)
 
-**Generated:** 2026-07-13 · **Source of truth:** [`_recommendations.csv`](_recommendations.csv) (profiled 2026-06-04 against Primal `d365.*`).
+**Generated:** 2026-07-13 · **Synced:** 2026-08-10 (CSV + phase docs brought in line with composite DDL).
+**Sources of truth:** [`create-partitions.sql`](create-partitions.sql) (DDL) and [`_recommendations.csv`](_recommendations.csv) (profiled 2026-06-04 against Primal `d365.*`; partition *types* match the SQL).
 **Companion DDL:** [`create-partitions.sql`](create-partitions.sql) — runnable partition-creation script covering **now through 2028** (2029 for future-dated delivery tables).
 
 ## What this is

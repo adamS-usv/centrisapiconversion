@@ -2,14 +2,16 @@
 
 **Scope:** Party/org backbone, financial dimensions, HCM, currency, system reference. Mostly slow-changing reference data.
 
-**Source:** profiled from `d365.*` schema on Azure SQL `d365a1prdsynlinkusvprod2sql01.database.windows.net / primal` on 2026-06-04. Row counts from `sys.dm_db_partition_stats`; date column min/max from TABLESAMPLE.
+**Source:** profiled from `d365.*` schema on Azure SQL `d365a1prdsynlinkusvprod2sql01.database.windows.net / primal` on 2026-06-04. Row counts from `sys.dm_db_partition_stats`; date column min/max from TABLESAMPLE. Partition *type* synced to composite DDL 2026-08-10.
 
 **Summary:**
 - Tables in scope: 98
-- Partitioning recommended:  (1 RANGE, 0 RANGE+LIST, 0 HASH)
+- Partitioning recommended: 1 (1 LIST+RANGE)
 - No partitioning needed: 97
 
 > **⚠️ Query-fit caveat:** These recommendations are profiled from **data shape**, not query access patterns. Per [`sproc-partition-fit-analysis.md`](sproc-partition-fit-analysis.md), current sprocs filter these tables by **business key** (InvoiceId/SalesId/RecId/AccountNum), not by the partition date column; `DataAreaId` LIST pruning fires only where `legalEntity`/`DataAreaId` is actually filtered (it is commented out in several `ais.*` procs). The date/RANGE design pays off for the **future date-range search APIs**, not legacy point lookups. Validate per table before authoring DDL.
+
+> **Composite rule (2026-07-24):** Every date-partitioned table is **`LIST(dataareaid) → RANGE(<date>)`** — legal entity first, date second — matching [`create-partitions.sql`](create-partitions.sql) / [`MASTER_PARTITION_LIST.md`](MASTER_PARTITION_LIST.md). HASH tables (no usable date) stay `HASH(recid)`.
 
 ## Tables to partition
 
@@ -17,7 +19,7 @@ Sorted by size (largest first).
 
 | Table | Rows | Size (MB) | Partition column | Type | Interval | DataAreaIds | Rationale |
 |---|---:|---:|---|---|---|---:|---|
-| `d365.sysuserlog` | 10091295 | 6104.25 | `createddatetime` | RANGE | monthly | 1 | 10M user log rows; createddatetime spans 2018-2026 |
+| `d365.sysuserlog` | 10091295 | 6104.25 | `createddatetime` | LIST+RANGE | LIST(DataAreaId) + monthly | 1 | 10M user log rows; createddatetime spans 2018-2026; composite LIST(dataareaid) → RANGE(date) |
 
 ## No partitioning needed (97 tables)
 
@@ -80,49 +82,49 @@ These tables are small enough (under 10M rows AND under 5 GB) or zero-row that P
 | `d365.hcmtitle` | 21 | 0.07 |
 | `d365.workcalendartable` | 12 | 0.07 |
 | `d365.dirnameaffix` | 10 | 0.07 |
-| `d365.dimensionattributedircategory` | 9 | 0.07 |
 | `d365.dirnamesequence` | 9 | 0.07 |
+| `d365.dimensionattributedircategory` | 9 | 0.07 |
 | `d365.omteammembershipcriterion` | 8 | 0.07 |
 | `d365.omteam` | 7 | 0.07 |
 | `d365.dimensionhierarchyintegration` | 4 | 0.07 |
 | `d365.hcmpositionhierarchytype` | 2 | 0.07 |
-| `d365.dimensionparameters` | 1 | 0.07 |
-| `d365.hcmreasoncode` | 1 | 0.07 |
 | `d365.systemparameters` | 1 | 0.07 |
-| `d365.dirpartynameprimaryaddressview` | 0 | 0 |
-| `d365.dirpartylocationrolesview` | 0 | 0 |
-| `d365.dirpartybaseentity` | 0 | 0 |
-| `d365.dimensionsetentity` | 0 | 0 |
-| `d365.dimattributeretailchannel` | 0 | 0 |
-| `d365.hcmworkerdetailsview` | 0 | 0 |
-| `d365.dimensioncombinationentity` | 0 | 0 |
-| `d365.dimattributevendgroup` | 0 | 0 |
-| `d365.dimattributemainaccount` | 0 | 0 |
-| `d365.dimattributeomvaluestream` | 0 | 0 |
-| `d365.dimattributeomdepartment` | 0 | 0 |
-| `d365.dimattributeomcostcenter` | 0 | 0 |
-| `d365.dimattributeombusinessunit` | 0 | 0 |
-| `d365.dimattributeinventitemgroup` | 0 | 0 |
-| `d365.logisticspostaladdressview` | 0 | 0 |
-| `d365.logisticspostaladdressbaseentity` | 0 | 0 |
-| `d365.dimattributeinventtable` | 0 | 0 |
-| `d365.dimattributevendtable` | 0 | 0 |
-| `d365.dimattributehcmjob` | 0 | 0 |
-| `d365.dimattributebankaccounttable` | 0 | 0 |
-| `d365.dimattributecompanyinfo` | 0 | 0 |
-| `d365.dimattributehcmposition` | 0 | 0 |
-| `d365.dimattributefinancialtag` | 0 | 0 |
-| `d365.dimattributecustgroup` | 0 | 0 |
-| `d365.dimattributehcmworker` | 0 | 0 |
-| `d365.dimattributecusttable` | 0 | 0 |
+| `d365.hcmreasoncode` | 1 | 0.07 |
+| `d365.dimensionparameters` | 1 | 0.07 |
+| `d365.dimattributecustgroup` | 0 | 0.00 |
+| `d365.dimattributefinancialtag` | 0 | 0.00 |
+| `d365.dimattributecusttable` | 0 | 0.00 |
+| `d365.dimattributehcmworker` | 0 | 0.00 |
+| `d365.dimattributebankaccounttable` | 0 | 0.00 |
+| `d365.dimattributehcmjob` | 0 | 0.00 |
+| `d365.dimattributehcmposition` | 0 | 0.00 |
+| `d365.dimattributecompanyinfo` | 0 | 0.00 |
 | `d365.companynafcode` | 0 | 0.00 |
-| `d365.v_dirorganization` | 0 | 0 |
-| `d365.v_dirpartytable` | 0 | 0 |
-| `d365.v_dirperson` | 0 | 0 |
-| `d365.vdefaultdimensionview` | 0 | 0 |
-| `d365.workcalendardayentity` | 0 | 0 |
-| `d365.dirpartypostaladdressview` | 0 | 0 |
-| `d365.workcalendartimeintervalentity` | 0 | 0 |
-| `d365.workcalendarentity` | 0 | 0 |
+| `d365.dirpartypostaladdressview` | 0 | 0.00 |
+| `d365.workcalendardayentity` | 0 | 0.00 |
+| `d365.workcalendarentity` | 0 | 0.00 |
+| `d365.workcalendartimeintervalentity` | 0 | 0.00 |
+| `d365.v_dirpartytable` | 0 | 0.00 |
+| `d365.v_dirorganization` | 0 | 0.00 |
+| `d365.vdefaultdimensionview` | 0 | 0.00 |
+| `d365.v_dirperson` | 0 | 0.00 |
+| `d365.dimattributevendtable` | 0 | 0.00 |
+| `d365.hcmworkerdetailsview` | 0 | 0.00 |
+| `d365.dimattributeretailchannel` | 0 | 0.00 |
+| `d365.dimattributevendgroup` | 0 | 0.00 |
+| `d365.dimensioncombinationentity` | 0 | 0.00 |
+| `d365.dirpartylocationrolesview` | 0 | 0.00 |
+| `d365.dirpartynameprimaryaddressview` | 0 | 0.00 |
+| `d365.dimensionsetentity` | 0 | 0.00 |
+| `d365.dirpartybaseentity` | 0 | 0.00 |
+| `d365.dimattributemainaccount` | 0 | 0.00 |
+| `d365.logisticspostaladdressview` | 0 | 0.00 |
+| `d365.dimattributeinventitemgroup` | 0 | 0.00 |
+| `d365.dimattributeinventtable` | 0 | 0.00 |
+| `d365.logisticspostaladdressbaseentity` | 0 | 0.00 |
+| `d365.dimattributeomdepartment` | 0 | 0.00 |
+| `d365.dimattributeomvaluestream` | 0 | 0.00 |
+| `d365.dimattributeombusinessunit` | 0 | 0.00 |
+| `d365.dimattributeomcostcenter` | 0 | 0.00 |
 
 </details>

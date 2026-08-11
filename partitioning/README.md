@@ -12,12 +12,13 @@ Recommendations are derived from empirical inspection of the `d365.*` schema cur
 - **63** tables exceed the 5M-row / 1-GB threshold; these get specific partition strategies.
 - **246** smaller tables (across all four phases) get no partitioning - a B-tree index on `DataAreaId` + business key is sufficient.
 
-| Phase | Total in scope | Partition recommended | No partitioning |
-|---|---:|---:|---:|
-| 0 - Foundation | 64 | 1 | 63 |
-| 2 - Masters | 102 | 17 | 85 |
-| 3 - Dependent reads | 59 | 29 | 30 |
-| 4 - Composite + Finance | 36 | 13 | 23 |
+| Phase | Total in scope | Partition recommended | Of which LIST+RANGE | Of which HASH | No partitioning |
+|---|---:|---:|---:|---:|---:|
+| 0 - Foundation | 98 | 1 | 1 | 0 | 97 |
+| 2 - Masters | 111 | 20 | 8 | 12 | 91 |
+| 3 - Dependent reads | 59 | 29 | 22 | 7 | 30 |
+| 4 - Composite + Finance | 41 | 13 | 12 | 1 | 28 |
+| **Total** | **309** | **63** | **43** | **20** | **246** |
 
 ## Decision framework
 
@@ -26,8 +27,7 @@ Cheapest answer wins:
 | Signal | Recommendation |
 |---|---|
 | Row count < 10M **and** size < 5 GB | **No partitioning.** B-tree index on `DataAreaId` + business key. |
-| Row count >= 10M, strong business-date column (`InvoiceDate`, `TransDate`, `AccountingDate`, `DeliveryDate`, etc.), multi-year spread | **RANGE by business-date column.** Monthly if >= 50M rows, quarterly otherwise. |
-| Above + `DataAreaId` distinct >= 4 + finance/invoice/settlement domain | **Composite LIST + RANGE** - `LIST (dataareaid)` as the leading key, `RANGE (<date>)` sub-partition per legal entity. (Revised 2026-07-24: `DataAreaId` first, because consumers filter legal entity far more consistently than date - see `MASTER_PARTITION_LIST.md` ordering note and `sproc-partition-fit-analysis.md` §2-3.) |
+| Row count >= 10M, strong business/audit date column (`InvoiceDate`, `TransDate`, `AccountingDate`, `DeliveryDate`, `ModifiedDateTime`, etc.), multi-year spread | **Composite LIST + RANGE** — `LIST (dataareaid)` leading, `RANGE (<date>)` sub-partition per kept legal entity (monthly if >= 50M rows, quarterly otherwise). Applies to **all** 43 date-partitioned tables, including single-entity ones (1-entity wrapper + `_edef` leaf). See `MASTER_PARTITION_LIST.md` and `create-partitions.sql`. |
 | Row count >= 10M but audit columns stuck at `1900-01-01` and no usable business-date column | **HASH by `RecId`** (4-16 partitions depending on size). |
 | Master/reference data | **No partitioning.** Caching layer or materialized views address read amplification. |
 
@@ -43,7 +43,7 @@ Cheapest answer wins:
 
 5. **Migrated 1900-01-01 rows in business-date columns.** Some tables (e.g., `purchline.deliverydate`, `markuptrans.transdate`) have a mix of legitimate dates and `1900-01-01` placeholders from the original DMS migration. In PostgreSQL/AlloyDB, define a **default partition** (or an explicit `1900-1999` partition) to absorb these.
 
-6. **`DataAreaId` cardinality is low.** Most tables have 1-3 distinct values; only finance/invoice/settlement tables go higher (top: `vendinvoicejour` at 17, `vendsettlement` at 16, `ledgertransvoucherlink` at 12). LIST sub-partitioning is worthwhile only for those.
+6. **`DataAreaId` cardinality is low, but LIST is still the leading key everywhere.** Most tables have 1-3 distinct values; only finance/invoice/settlement tables go higher (top: `vendinvoicejour` at 17, `vendsettlement` at 16, `ledgertransvoucherlink` at 12). Even single-entity tables get a 1-code LIST wrapper + `_edef` leaf so every date-partitioned table uses the same `LIST(dataareaid) → RANGE(date)` shape and `dataareaid` predicates prune uniformly.
 
 ## File layout
 
